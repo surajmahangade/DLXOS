@@ -3,12 +3,13 @@
 #include "misc.h"
 
 #include "spawn.h"
+#include <q2/include/spawn.h>
 
 void main (int argc, char *argv[])
 {
   int numprocs = 0;               // Used to store number of processes to create
   int i;                          // Loop index variable
-  missile_code *mc;               // Used to get address of shared memory page
+  mem_buffer *mc;               // Used to get address of shared memory page
   uint32 h_mem;                   // Used to hold handle to shared memory page
   sem_t s_procs_completed;        // Semaphore used to wait until all spawned processes have completed
   char h_mem_str[10];             // Used as command-line argument to pass mem_handle to new processes
@@ -32,14 +33,16 @@ void main (int argc, char *argv[])
   }
 
   // Map shared memory page into this process's memory space
-  if ((mc = (missile_code *)shmat(h_mem)) == NULL) {
+  if ((mc = (mem_buffer *)shmat(h_mem)) == NULL) {
     Printf("Could not map the shared page to virtual address in "); Printf(argv[0]); Printf(", exiting..\n");
     Exit();
   }
 
   // Put some values in the shared memory, to be read by other processes
-  mc->numprocs = numprocs;
-  mc->really_important_char = 'A';
+  mc->start = 0;
+  mc->end = 0;
+  mc->count = 0;
+  mc->buffer_lock = LockHandleCreate();
 
   // Create semaphore to not exit this process until all other processes 
   // have signalled that they are complete.  To do this, we will initialize

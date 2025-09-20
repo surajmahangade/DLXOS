@@ -2,11 +2,12 @@
 #include "usertraps.h"
 #include "misc.h"
 
-#include "spawn.h"
+// #include "spawn.h"
+#include <q2/include/spawn.h>
 
 void main (int argc, char *argv[])
 {
-  missile_code *mc;        // Used to access missile codes in shared memory page
+  mem_buffer *mc;        // Used to access missile codes in shared memory page
   uint32 h_mem;            // Handle to the shared memory page
   sem_t s_procs_completed; // Semaphore to signal the original process that we're done
 
@@ -20,14 +21,16 @@ void main (int argc, char *argv[])
   s_procs_completed = dstrtol(argv[2], NULL, 10);
 
   // Map shared memory page into this process's memory space
-  if ((mc = (missile_code *)shmat(h_mem)) == NULL) {
+  if ((mc = (mem_buffer *)shmat(h_mem)) == NULL) {
     Printf("Could not map the virtual address to the memory in "); Printf(argv[0]); Printf(", exiting...\n");
     Exit();
   }
+
+  //mc has start, end, count, buffer[10]
  
   // Now print a message to show that everything worked
-  Printf("spawn_me: This is one of the %d instances you created.  ", mc->numprocs);
-  Printf("spawn_me: Missile code is: %c\n", mc->really_important_char);
+  Printf("spawn_me: This is one of the %d count  ", mc->count);
+  Printf("spawn_me: Missile code is: %c\n", mc->buffer_lock);
   Printf("spawn_me: My PID is %d\n", Getpid());
 
   // Signal the semaphore to tell the original process that we're done
