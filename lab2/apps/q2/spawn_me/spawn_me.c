@@ -5,6 +5,45 @@
 #include "spawn.h"
 // #include <q2/include/spawn.h>
 
+
+void Producer(mem_buffer *mc) {
+  // check if the buffer is full
+  if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
+    // buffer is full, cannot produce
+    Printf("Buffer is full, cannot produce\n");
+    return;
+  
+  lock_acquire(mc->buffer_lock);
+  // read one character from MESSAGE
+  char item = MESSAGE[mc->count % BUFFER_SIZE];
+  // add the character to the buffer
+  mc->buffer[mc->end] = item;
+  mc->end = (mc->end + 1) % BUFFER_SIZE;
+  mc->count++;
+  Printf("Produced: %c\n", item);
+  lock_release(mc->buffer_lock);
+  
+
+}
+
+
+void Consumer(mem_buffer *mc) {
+  // check if the buffer is empty
+  if (mc->start == mc->end) {
+    // buffer is empty, cannot consume
+    Printf("Buffer is empty, cannot consume\n");
+    return;
+  }
+  
+  lock_acquire(mc->buffer_lock);
+  // remove one character from the buffer
+  char item = mc->buffer[mc->start];
+  mc->start = (mc->start + 1) % BUFFER_SIZE;
+  Printf("Consumed: %c\n", item);
+  lock_release(mc->buffer_lock);
+
+}
+
 void main (int argc, char *argv[])
 {
   mem_buffer *mc;        // Used to access missile codes in shared memory page
@@ -32,9 +71,14 @@ void main (int argc, char *argv[])
   Printf("spawn_me: This is one of the %d count  ", mc->count);
   Printf("spawn_me: Missile code is: %c\n", mc->buffer_lock);
   Printf("spawn_me: My PID is %d\n", Getpid());
-
+  Producer(mc);
+  Consumer(mc);
   // Signal the semaphore to tell the original process that we're done
   Printf("spawn_me: PID %d is complete.\n", Getpid());
+
+
+
+
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
     Exit();

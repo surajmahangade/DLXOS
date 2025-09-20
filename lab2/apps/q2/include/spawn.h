@@ -6,9 +6,11 @@ typedef struct missile_code {
   char really_important_char;
 } missile_code;
 
+#define BUFFER_SIZE 10
+#define MESSAGE "0123456789"
 
 typedef struct mem_buffer {
-  char buffer[10];
+  char buffer[BUFFER_SIZE];
   int start;
   int end;
   int count;
@@ -16,5 +18,4 @@ typedef struct mem_buffer {
 } mem_buffer;
 
 #define FILENAME_TO_RUN "spawn_me.dlx.obj"
-
 #endif
