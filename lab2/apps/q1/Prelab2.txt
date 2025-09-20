@@ -1,0 +1,20 @@
+How many semaphores and locks are available in DLXOS, respectively?
+- DLXOS supports a maximum of 32 semaphores and 64 locks, as defined by MAX_SEMS and MAX_LOCKS in synch.h.
+
+What are the system calls to create, acquire and release a lock?
+- The system calls are:
+  - lock_create() to create a lock
+  - lock_acquire(lock_t lock) to acquire a lock
+  - lock_release(lock_t lock) to release a lock
+
+How is a semaphore created in DLXOS?
+- A semaphore is created using the system call sem_create(int count), which allocates a free semaphore structure, initializes it with the given count, and returns a handle to the semaphore.
+
+Explain how lock_acquire, lock_release, sem_signal and sem_wait work.
+- lock_acquire: Checks if the current process already owns the lock. If not, and the lock is held by another process, the current process is put to sleep and added to the lock's waiting queue. If the lock is free, it is assigned to the current process.
+- lock_release: Checks if the current process owns the lock. If so, releases the lock and wakes up the next waiting process (if any), transferring ownership.
+- sem_wait: If the semaphore count is less than or equal to zero, the process is put to sleep and added to the semaphore's waiting queue. Otherwise, the count is decremented and the process continues.
+- sem_signal: Increments the semaphore count. If there are waiting processes and the count is positive, wakes up one process and decrements the count on its behalf.
+
+What is a handle and how is it used to access semaphores in DLXOS?
+- A handle is an integer value returned when a semaphore (or lock/condition variable) is created. It serves as an index into the system's array of semaphore structures, allowing user-level code and system calls to reference and operate on the correct semaphore instance.
