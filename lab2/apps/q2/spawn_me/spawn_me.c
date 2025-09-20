@@ -2,8 +2,8 @@
 #include "usertraps.h"
 #include "misc.h"
 
-// #include "spawn.h"
-#include <q2/include/spawn.h>
+#include "spawn.h"
+// #include <q2/include/spawn.h>
 
 void main (int argc, char *argv[])
 {

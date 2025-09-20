@@ -1,0 +1,45 @@
+# --- General OS build artifacts ---
+*.o
+*.a
+*.so
+*.aso
+*.d
+*.dSYM/
+*.dep
+*.depend
+*.log
+
+# --- DLX app build output ---
+apps/*/work/
+apps/*/*/work/
+apps/*/*.dlx
+apps/*/*/*.dlx
+
+# --- OS kernel build output ---
+kernel/work/
+kernel/*.dlx
+kernel/*.map
+
+# --- Common temporary files ---
+*.swp
+*~
+*.tmp
+*.bak
+
+# --- Tool-specific ---
+# GCC, clang, etc.
+*.out
+*.obj
+*.elf
+
+# --- OS image and generated libs ---
+*.dlx.obj
+*.dlx.bin
+*.dlx.out
+
+# --- Miscellaneous ---
+.DS_Store
+*.dlx
+*.lst
+*/bin
+settings.json

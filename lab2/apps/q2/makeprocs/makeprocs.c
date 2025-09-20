@@ -3,7 +3,8 @@
 #include "misc.h"
 
 #include "spawn.h"
-#include <q2/include/spawn.h>
+// #include "lab.h"
+// #include <q2/include/spawn.h>
 
 void main (int argc, char *argv[])
 {
@@ -42,7 +43,7 @@ void main (int argc, char *argv[])
   mc->start = 0;
   mc->end = 0;
   mc->count = 0;
-  mc->buffer_lock = LockHandleCreate();
+  mc->buffer_lock = lock_create();
 
   // Create semaphore to not exit this process until all other processes 
   // have signalled that they are complete.  To do this, we will initialize
