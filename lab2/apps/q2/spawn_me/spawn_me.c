@@ -1,11 +1,28 @@
 #include "lab2-api.h"
 #include "usertraps.h"
 #include "misc.h"
-#include <q2/include/spawn.h>
+// #include <q2/include/spawn.h>
+#include "spawn.h"
+// #include <string.h>
 
 void Consumer(mem_buffer *mc, int process_id, char *final_string);
 void Producer(mem_buffer *mc, int process_id);
+unsigned int my_pid;
+char item;
+char current_item;
+int i;
 
+int strlen (const char *s)
+{
+  int		i = 0;
+
+  while (*(s++) != '\0') {
+    i++;
+  }
+  return (i);
+}
+
+// #define MESSAGE "0123456789"
 void main (int argc, char *argv[])
 {
   mem_buffer *mc;
@@ -34,7 +51,7 @@ void main (int argc, char *argv[])
     Exit();
   }
 
-  int my_pid = Getpid();
+  my_pid = Getpid();
   Printf("spawn_me: This is process with PID %d\n", my_pid);
 
   // Producer and Consumer work together
@@ -58,7 +75,7 @@ void Producer(mem_buffer *mc, int process_id) {
   int chars_produced = 0;
   
   Printf("Producer %d: Starting to produce %d characters from \"0123456789\"\n", process_id, message_len);
-  int inserted;
+  // int inserted;
   if (chars_produced < message_len) {
     lock_acquire(mc->buffer_lock);
     
@@ -69,12 +86,12 @@ void Producer(mem_buffer *mc, int process_id) {
     }
     
     // Get character from MESSAGE
-    char item = MESSAGE[chars_produced];
+    item = MESSAGE[chars_produced];
     
     // Add the character to the buffer
     mc->buffer[mc->end] = item;
     mc->end = (mc->end + 1) % BUFFER_SIZE;
-    inserted = 1;
+    // inserted = 1;
     chars_produced++;
     
     Printf("Producer %d: Produced '%c' (%d/%d)\n", 
@@ -91,7 +108,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
   int chars_consumed = 0;
   char expected_char = '0';  // Start expecting '0' for "0123456789"
   
-  int consumed;
+  // int consumed;
   if (chars_consumed < message_len) {
     lock_acquire(mc->buffer_lock);
     
@@ -102,7 +119,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
       // Small delay before retrying
     }
     
-    char current_item = mc->buffer[mc->start];
+    current_item = mc->buffer[mc->start];
     
     // Sequential check
     if (current_item != expected_char) {
@@ -125,7 +142,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     
     // Update expected character for next iteration
     expected_char = current_item + 1;
-    consumed = 1;
+    // consumed = 1;
     chars_consumed++;
     
     lock_release(mc->buffer_lock);
@@ -139,7 +156,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     
   //print the final string
     Printf("The Final String is: ");
-    for (int i = 0; i < strlen(final_string); i++) {
+    for (i = 0; i < strlen(final_string); i++) {
       Printf("%c", final_string[i]);
     }
     Printf("\n");
