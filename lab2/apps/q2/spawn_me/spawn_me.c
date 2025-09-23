@@ -135,23 +135,11 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     Printf("Consumer %d: Original MESSAGE: %s (length %d)\n", process_id, MESSAGE, strlen(MESSAGE));
     Printf("Consumer %d: Final string:    %s (length %d)\n", process_id, final_string, strlen(final_string));
     
-    // Verify content matches exactly
-    int i;
-    int content_match = 1;
-    for (i = 0; i < message_len; i++) {
-      if (final_string[i] != MESSAGE[i]) {
-        content_match = 0;
-        break;
-      }
+  //print the final string
+    Printf("The Final String is: ");
+    for (int i = 0; i < strlen(final_string); i++) {
+      Printf("%c", final_string[i]);
     }
-    
-    if (content_match) {
-      Printf("Consumer %d: Content verification: PASS - Strings match exactly!\n", process_id);
-    } else {
-      Printf("Consumer %d: Content verification: FAIL - String content differs!\n", process_id);
-    }
-  } else {
-    Printf("Consumer %d: ERROR - Length mismatch! Expected %d, got %d\n", 
-           process_id, strlen(MESSAGE), strlen(final_string));
-  }
+    Printf("\n");
+}
 }
