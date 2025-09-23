@@ -1,5 +1,6 @@
 #ifndef __USERPROG__
 #define __USERPROG__
+#include "lab2-api.h"
 
 typedef struct missile_code {
   int numprocs;

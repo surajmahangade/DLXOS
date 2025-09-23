@@ -1,54 +1,23 @@
 #include "lab2-api.h"
 #include "usertraps.h"
 #include "misc.h"
+#include <q2/include/spawn.h>
 
-#include "spawn.h"
-// #include <q2/include/spawn.h>
-
-
-void Producer(mem_buffer *mc) {
-  // check if the buffer is full
-  if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
-    // buffer is full, cannot produce
-    Printf("Buffer is full, cannot produce\n");
-    return;
-  
-  lock_acquire(mc->buffer_lock);
-  // read one character from MESSAGE
-  char item = MESSAGE[mc->count % BUFFER_SIZE];
-  // add the character to the buffer
-  mc->buffer[mc->end] = item;
-  mc->end = (mc->end + 1) % BUFFER_SIZE;
-  mc->count++;
-  Printf("Produced: %c\n", item);
-  lock_release(mc->buffer_lock);
-  
-
-}
-
-
-void Consumer(mem_buffer *mc) {
-  // check if the buffer is empty
-  if (mc->start == mc->end) {
-    // buffer is empty, cannot consume
-    Printf("Buffer is empty, cannot consume\n");
-    return;
-  }
-  
-  lock_acquire(mc->buffer_lock);
-  // remove one character from the buffer
-  char item = mc->buffer[mc->start];
-  mc->start = (mc->start + 1) % BUFFER_SIZE;
-  Printf("Consumed: %c\n", item);
-  lock_release(mc->buffer_lock);
-
-}
+void Consumer(mem_buffer *mc, int process_id, char *final_string);
+void Producer(mem_buffer *mc, int process_id);
 
 void main (int argc, char *argv[])
 {
-  mem_buffer *mc;        // Used to access missile codes in shared memory page
-  uint32 h_mem;            // Handle to the shared memory page
-  sem_t s_procs_completed; // Semaphore to signal the original process that we're done
+  mem_buffer *mc;
+  uint32 h_mem;
+  sem_t s_procs_completed;
+  char final_string[BUFFER_SIZE];  // Store consumed results
+  
+  // Initialize final_string
+  int i;
+  for (i = 0; i < BUFFER_SIZE; i++) {
+    final_string[i] = '\0';
+  }
 
   if (argc != 3) { 
     Printf("Usage: "); Printf(argv[0]); Printf(" <handle_to_shared_memory_page> <handle_to_page_mapped_semaphore>\n"); 
@@ -56,7 +25,7 @@ void main (int argc, char *argv[])
   } 
 
   // Convert the command-line strings into integers for use as handles
-  h_mem = dstrtol(argv[1], NULL, 10); // The "10" means base 10
+  h_mem = dstrtol(argv[1], NULL, 10);
   s_procs_completed = dstrtol(argv[2], NULL, 10);
 
   // Map shared memory page into this process's memory space
@@ -65,22 +34,124 @@ void main (int argc, char *argv[])
     Exit();
   }
 
-  //mc has start, end, count, buffer[10]
- 
-  // Now print a message to show that everything worked
-  Printf("spawn_me: This is one of the %d count  ", mc->count);
-  Printf("spawn_me: Missile code is: %c\n", mc->buffer_lock);
-  Printf("spawn_me: My PID is %d\n", Getpid());
-  Producer(mc);
-  Consumer(mc);
-  // Signal the semaphore to tell the original process that we're done
-  Printf("spawn_me: PID %d is complete.\n", Getpid());
+  int my_pid = Getpid();
+  Printf("spawn_me: This is process with PID %d\n", my_pid);
 
-
-
+  // Producer and Consumer work together
+  Producer(mc, my_pid);
+  Consumer(mc, my_pid, final_string);
+  
+  Printf("spawn_me: PID %d transfer complete. Final string: %s\n", my_pid, final_string);
+  Printf("spawn_me: Final string length: %d, MESSAGE length: %d\n", 
+         strlen(final_string), strlen(MESSAGE));
 
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
     Exit();
+  }
+}
+
+void Producer(mem_buffer *mc, int process_id) {
+  int message_len = strlen(MESSAGE);
+  int chars_produced = 0;
+  
+  Printf("Producer %d: Starting to produce %d characters from \"0123456789\"\n", process_id, message_len);
+  
+  while (chars_produced < message_len) {
+    lock_acquire(mc->buffer_lock);
+    
+    // Check if the buffer is full
+    if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
+      Printf("Producer %d: Buffer full, waiting...\n", process_id);
+      lock_release(mc->buffer_lock);
+      continue;
+    }
+    
+    // Get character from MESSAGE
+    char item = MESSAGE[chars_produced];
+    
+    // Add the character to the buffer
+    mc->buffer[mc->end] = item;
+    mc->end = (mc->end + 1) % BUFFER_SIZE;
+    chars_produced++;
+    
+    Printf("Producer %d: Produced '%c' (%d/%d)\n", 
+           process_id, item, chars_produced, message_len);
+    
+    lock_release(mc->buffer_lock);
+  }
+  
+  Printf("Producer %d: Finished producing all characters\n", process_id);
+}
+
+void Consumer(mem_buffer *mc, int process_id, char *final_string) {
+  int message_len = strlen(MESSAGE); 
+  int chars_consumed = 0;
+  char expected_char = '0';  // Start expecting '0' for "0123456789"
+  
+  
+  while (chars_consumed < message_len) {
+    lock_acquire(mc->buffer_lock);
+    
+    // Check if the buffer is empty
+    if (mc->start == mc->end) {
+      Printf("Consumer %d: Buffer empty, waiting...\n", process_id);
+      lock_release(mc->buffer_lock);
+      // Small delay before retrying
+      continue;
+    }
+    
+    char current_item = mc->buffer[mc->start];
+    
+    // Sequential check
+    if (current_item != expected_char) {
+      Printf("Consumer %d: ERROR - Sequential check failed!\n", process_id);
+      Printf("Consumer %d: Expected '%c' (ASCII %d), got '%c' (ASCII %d)\n", 
+             process_id, expected_char, expected_char, current_item, current_item);
+      Printf("Consumer %d: Characters consumed so far: %s\n", process_id, final_string);
+      lock_release(mc->buffer_lock);
+      return;  // Stop consuming on sequential error
+    }
+    
+    // Remove character from buffer
+    mc->start = (mc->start + 1) % BUFFER_SIZE;
+    
+    // Store in final string
+    final_string[chars_consumed] = current_item;
+    
+    Printf("Consumer %d: Consumed '%c' (%d/%d) - Sequential check: PASS\n", 
+           process_id, current_item, chars_consumed + 1, message_len);
+    
+    // Update expected character for next iteration
+    expected_char = current_item + 1;
+    chars_consumed++;
+    
+    lock_release(mc->buffer_lock);
+  }
+  
+  // Final verification
+  if (strlen(final_string) == strlen(MESSAGE)) {
+    Printf("Consumer %d: SUCCESS - Transfer complete! Final string length matches MESSAGE length\n", process_id);
+    Printf("Consumer %d: Original MESSAGE: %s (length %d)\n", process_id, MESSAGE, strlen(MESSAGE));
+    Printf("Consumer %d: Final string:    %s (length %d)\n", process_id, final_string, strlen(final_string));
+    
+    // Verify content matches exactly
+    int i;
+    int content_match = 1;
+    for (i = 0; i < message_len; i++) {
+      if (final_string[i] != MESSAGE[i]) {
+        content_match = 0;
+        break;
+      }
+    }
+    
+    if (content_match) {
+      Printf("Consumer %d: Content verification: PASS - Strings match exactly!\n", process_id);
+    } else {
+      Printf("Consumer %d: Content verification: FAIL - String content differs!\n", process_id);
+    }
+  } else {
+    Printf("Consumer %d: ERROR - Length mismatch! Expected %d, got %d\n", 
+           process_id, strlen(MESSAGE), strlen(final_string));
   }
 }
