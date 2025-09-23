@@ -11,6 +11,10 @@ unsigned int my_pid;
 char item;
 char current_item;
 int i;
+int j;
+int chars_produced = 0;
+int chars_consumed = 0;
+char expected_char = '0';  // Start expecting '0' for "0123456789"
 
 int strlen (const char *s)
 {
@@ -20,6 +24,11 @@ int strlen (const char *s)
     i++;
   }
   return (i);
+}
+
+void sleep(int seconds) {
+  //simulate sleep
+  // for (j = 0; j < seconds * 1000000; j++);
 }
 
 // #define MESSAGE "0123456789"
@@ -58,9 +67,10 @@ void main (int argc, char *argv[])
   while (strlen(final_string) < strlen(MESSAGE)) {
     Producer(mc, my_pid);
     Consumer(mc, my_pid, final_string);
+    // sleep(5);  // Small delay to allow other process to run
   }
   
-  Printf("spawn_me: PID %d transfer complete. Final string: %s\n", my_pid, final_string);
+  // Printf("spawn_me: PID %d transfer complete. Final string: %s\n", my_pid, final_string);
   Printf("spawn_me: Final string length: %d, MESSAGE length: %d\n", 
          strlen(final_string), strlen(MESSAGE));
 
@@ -72,9 +82,8 @@ void main (int argc, char *argv[])
 
 void Producer(mem_buffer *mc, int process_id) {
   int message_len = strlen(MESSAGE);
-  int chars_produced = 0;
   
-  Printf("Producer %d: Starting to produce %d characters from \"0123456789\"\n", process_id, message_len);
+
   // int inserted;
   if (chars_produced < message_len) {
     lock_acquire(mc->buffer_lock);
@@ -83,11 +92,12 @@ void Producer(mem_buffer *mc, int process_id) {
     if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
       Printf("Producer %d: Buffer full, waiting...\n", process_id);
       lock_release(mc->buffer_lock);
+      return;
     }
     
     // Get character from MESSAGE
     item = MESSAGE[chars_produced];
-    
+    // Printf("Producer %d: Starting to produce %d characters "\n", process_id, message_len);
     // Add the character to the buffer
     mc->buffer[mc->end] = item;
     mc->end = (mc->end + 1) % BUFFER_SIZE;
@@ -98,15 +108,15 @@ void Producer(mem_buffer *mc, int process_id) {
            process_id, item, chars_produced, message_len);
     
     lock_release(mc->buffer_lock);
+    Printf("Producer %d: Finished producing %c\n", process_id, item);
   }
-  
-  Printf("Producer %d: Finished producing all characters\n", process_id);
+  // else {
+  //   Printf("Producer %d: All characters produced.\n", process_id);
+  // }
 }
 
 void Consumer(mem_buffer *mc, int process_id, char *final_string) {
   int message_len = strlen(MESSAGE); 
-  int chars_consumed = 0;
-  char expected_char = '0';  // Start expecting '0' for "0123456789"
   
   // int consumed;
   if (chars_consumed < message_len) {
@@ -114,9 +124,10 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     
     // Check if the buffer is empty
     if (mc->start == mc->end) {
-      Printf("Consumer %d: Buffer empty, waiting...\n", process_id);
+      Printf("Consumer %d: Buffer empty, waiting for character : %c\n", process_id, expected_char);
       lock_release(mc->buffer_lock);
       // Small delay before retrying
+      return;
     }
     
     current_item = mc->buffer[mc->start];
@@ -128,17 +139,42 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
              process_id, expected_char, expected_char, current_item, current_item);
       Printf("Consumer %d: Characters consumed so far: %s\n", process_id, final_string);
       lock_release(mc->buffer_lock);
+      // print the entire buffer
+      Printf("Current Buffer State: ");
+      for (i = mc->start; i < BUFFER_SIZE; i++) {
+        Printf("%c ", mc->buffer[i]);
+      }
+      if (mc->end < mc->start) {
+        for (i = 0; i < mc->end; i++) {
+          Printf("%c ", mc->buffer[i]);
+        }
+      }
+      Printf("\n");
+      sleep(5);  // Allow time for debugging
       return;  // Stop consuming on sequential error
     }
     
     // Remove character from buffer
     mc->start = (mc->start + 1) % BUFFER_SIZE;
-    
+
+    Printf("Consumer %d: Current Buffer State after consume: start: %d, end: %d, count: %d\n", 
+           process_id, mc->start, mc->end, mc->count);
+    for (i = mc->start; i < BUFFER_SIZE; i++) {
+        Printf("%c ", mc->buffer[i]);
+      }
+      if (mc->end < mc->start) {
+        for (i = 0; i < mc->end; i++) {
+          Printf("%c ", mc->buffer[i]);
+        }
+      }
+    Printf("\n");
     // Store in final string
     final_string[chars_consumed] = current_item;
     
-    Printf("Consumer %d: Consumed '%c' (%d/%d) - Sequential check: PASS\n", 
-           process_id, current_item, chars_consumed + 1, message_len);
+
+    
+    Printf("Consumer %d: Consumed '%c' (%d/%d) , expected %c - Sequential check: PASS\n", 
+           process_id, current_item, chars_consumed + 1, message_len, expected_char);
     
     // Update expected character for next iteration
     expected_char = current_item + 1;
@@ -150,9 +186,10 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
   
   // Final verification
   if (strlen(final_string) == strlen(MESSAGE)) {
+    lock_acquire(mc->buffer_lock);
     Printf("Consumer %d: SUCCESS - Transfer complete! Final string length matches MESSAGE length\n", process_id);
     Printf("Consumer %d: Original MESSAGE: %s (length %d)\n", process_id, MESSAGE, strlen(MESSAGE));
-    Printf("Consumer %d: Final string:    %s (length %d)\n", process_id, final_string, strlen(final_string));
+    // Printf("Consumer %d: Final string:    %s (length %d)\n", process_id, final_string, strlen(final_string));
     
   //print the final string
     Printf("The Final String is: ");
@@ -160,5 +197,6 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
       Printf("%c", final_string[i]);
     }
     Printf("\n");
+    lock_release(mc->buffer_lock);
 }
 }
