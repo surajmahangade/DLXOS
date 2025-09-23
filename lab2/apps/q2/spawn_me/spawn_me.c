@@ -38,8 +38,10 @@ void main (int argc, char *argv[])
   Printf("spawn_me: This is process with PID %d\n", my_pid);
 
   // Producer and Consumer work together
-  Producer(mc, my_pid);
-  Consumer(mc, my_pid, final_string);
+  while (strlen(final_string) < strlen(MESSAGE)) {
+    Producer(mc, my_pid);
+    Consumer(mc, my_pid, final_string);
+  }
   
   Printf("spawn_me: PID %d transfer complete. Final string: %s\n", my_pid, final_string);
   Printf("spawn_me: Final string length: %d, MESSAGE length: %d\n", 
@@ -56,15 +58,14 @@ void Producer(mem_buffer *mc, int process_id) {
   int chars_produced = 0;
   
   Printf("Producer %d: Starting to produce %d characters from \"0123456789\"\n", process_id, message_len);
-  
-  while (chars_produced < message_len) {
+  int inserted;
+  if (chars_produced < message_len) {
     lock_acquire(mc->buffer_lock);
     
     // Check if the buffer is full
     if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
       Printf("Producer %d: Buffer full, waiting...\n", process_id);
       lock_release(mc->buffer_lock);
-      continue;
     }
     
     // Get character from MESSAGE
@@ -73,6 +74,7 @@ void Producer(mem_buffer *mc, int process_id) {
     // Add the character to the buffer
     mc->buffer[mc->end] = item;
     mc->end = (mc->end + 1) % BUFFER_SIZE;
+    inserted = 1;
     chars_produced++;
     
     Printf("Producer %d: Produced '%c' (%d/%d)\n", 
@@ -89,8 +91,8 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
   int chars_consumed = 0;
   char expected_char = '0';  // Start expecting '0' for "0123456789"
   
-  
-  while (chars_consumed < message_len) {
+  int consumed;
+  if (chars_consumed < message_len) {
     lock_acquire(mc->buffer_lock);
     
     // Check if the buffer is empty
@@ -98,7 +100,6 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
       Printf("Consumer %d: Buffer empty, waiting...\n", process_id);
       lock_release(mc->buffer_lock);
       // Small delay before retrying
-      continue;
     }
     
     char current_item = mc->buffer[mc->start];
@@ -124,6 +125,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     
     // Update expected character for next iteration
     expected_char = current_item + 1;
+    consumed = 1;
     chars_consumed++;
     
     lock_release(mc->buffer_lock);
