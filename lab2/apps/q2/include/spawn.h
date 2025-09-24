@@ -15,6 +15,8 @@ typedef struct mem_buffer {
   int start;
   int end;
   int count;
+  int chars_produced; // Global counter for total characters produced
+  int chars_consumed; // Global counter for total characters consumed
   lock_t buffer_lock;
 } mem_buffer;
 
