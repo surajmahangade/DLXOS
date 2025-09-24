@@ -9,6 +9,7 @@ unsigned int my_pid;
 char item;
 char current_item;
 int i;
+int j;
 
 int strlen (const char *s)
 {
@@ -18,6 +19,11 @@ int strlen (const char *s)
     i++;
   }
   return (i);
+}
+
+void sleep(int seconds) {
+  //simulate sleep
+  // for (j = 0; j < seconds * 1000000; j++);
 }
 
 void main (int argc, char *argv[])
@@ -67,6 +73,8 @@ void main (int argc, char *argv[])
   
   Printf("spawn_me: PID %d finished its work. Chars produced globally: %d, Chars consumed globally: %d\n", 
          my_pid, mc->chars_produced, mc->chars_consumed);
+  Printf("spawn_me: Final string length: %d, MESSAGE length: %d\n", 
+         strlen(final_string), strlen(MESSAGE));
 
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
@@ -75,10 +83,12 @@ void main (int argc, char *argv[])
 }
 
 void Producer(mem_buffer *mc, int process_id) {
+  int message_len = strlen(MESSAGE);
+  
   lock_acquire(mc->buffer_lock);
   
   // Check if we still need to produce more characters globally
-  if (mc->chars_produced >= strlen(MESSAGE)) {
+  if (mc->chars_produced >= message_len) {
     lock_release(mc->buffer_lock);
     return;
   }
@@ -99,23 +109,27 @@ void Producer(mem_buffer *mc, int process_id) {
   mc->chars_produced++;  // Increment global production counter
   
   Printf("Producer %d: Produced '%c' (global count: %d/%d)\n", 
-         process_id, item, mc->chars_produced, strlen(MESSAGE));
+         process_id, item, mc->chars_produced, message_len);
   
   lock_release(mc->buffer_lock);
+  Printf("Producer %d: Finished producing %c\n", process_id, item);
 }
 
 void Consumer(mem_buffer *mc, int process_id, char *final_string) {
+  int message_len = strlen(MESSAGE);
+  
   lock_acquire(mc->buffer_lock);
   
   // Check if we've consumed all characters globally
-  if (mc->chars_consumed >= strlen(MESSAGE)) {
+  if (mc->chars_consumed >= message_len) {
     lock_release(mc->buffer_lock);
     return;
   }
   
   // Check if the buffer is empty
   if (mc->start == mc->end) {
-    Printf("Consumer %d: Buffer empty, waiting...\n", process_id);
+    char expected_char = '0' + mc->chars_consumed;
+    Printf("Consumer %d: Buffer empty, waiting for character : %c\n", process_id, expected_char);
     lock_release(mc->buffer_lock);
     return;
   }
@@ -129,6 +143,16 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     Printf("Consumer %d: Expected '%c' (ASCII %d), got '%c' (ASCII %d)\n", 
            process_id, expected_char, expected_char, current_item, current_item);
     Printf("Consumer %d: Global chars consumed: %d\n", process_id, mc->chars_consumed);
+    
+    // Print the entire buffer
+    Printf("Consumer %d: Current Buffer State: ", process_id);
+    int temp_start = mc->start;
+    while (temp_start != mc->end) {
+      Printf("%c ", mc->buffer[temp_start]);
+      temp_start = (temp_start + 1) % BUFFER_SIZE;
+    }
+    Printf("\n");
+    
     lock_release(mc->buffer_lock);
     return;  // Stop consuming on sequential error
   }
@@ -136,17 +160,27 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
   // Remove character from buffer
   mc->start = (mc->start + 1) % BUFFER_SIZE;
   
+  Printf("Consumer %d: Current Buffer State after consume: start: %d, end: %d\n", 
+         process_id, mc->start, mc->end);
+  Printf("Consumer %d: Buffer contents: ", process_id);
+  int temp_start = mc->start;
+  while (temp_start != mc->end) {
+    Printf("%c ", mc->buffer[temp_start]);
+    temp_start = (temp_start + 1) % BUFFER_SIZE;
+  }
+  Printf("\n");
+  
   // Store in local final string (each process keeps its own copy of what it consumed)
   final_string[strlen(final_string)] = current_item;
   mc->chars_consumed++;  // Increment global consumption counter
   
-  Printf("Consumer %d: Consumed '%c' (global count: %d/%d) - Sequential check: PASS\n", 
-         process_id, current_item, mc->chars_consumed, strlen(MESSAGE));
+  Printf("Consumer %d: Consumed '%c' (global count: %d/%d), expected %c - Sequential check: PASS\n", 
+         process_id, current_item, mc->chars_consumed, message_len, expected_char);
   
   lock_release(mc->buffer_lock);
   
   // Check if transfer is complete globally
-  if (mc->chars_consumed == strlen(MESSAGE)) {
+  if (mc->chars_consumed == message_len) {
     Printf("Consumer %d: SUCCESS - Global transfer complete!\n", process_id);
     Printf("Consumer %d: Original MESSAGE: %s (length %d)\n", process_id, MESSAGE, strlen(MESSAGE));
     Printf("Consumer %d: This process consumed: %s (length %d)\n", process_id, final_string, strlen(final_string));
