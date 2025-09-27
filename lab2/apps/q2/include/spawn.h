@@ -18,5 +18,6 @@ typedef struct mem_buffer {
   lock_t buffer_lock;
 } mem_buffer;
 
-#define FILENAME_TO_RUN "spawn_me.dlx.obj"
+#define CONSUMER_TO_RUN "consumer.dlx.obj"
+#define PRODUCER_TO_RUN "producer.dlx.obj"
 #endif
