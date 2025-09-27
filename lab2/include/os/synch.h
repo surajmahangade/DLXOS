@@ -56,7 +56,9 @@ int LockAcquire(Lock *);
 int LockRelease(Lock *);
 
 typedef struct Cond {
-  // Your code goes here
+  lock_t lock;    // lock associated with this condition variable
+  Queue waiting;  // Queue of processes waiting on the condition variable
+  int inuse;      // Bookkeeping variable for free vs. used structures
 } Cond;
 
 int CondInit(Cond *);
