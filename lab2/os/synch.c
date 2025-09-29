@@ -377,27 +377,27 @@ cond_t CondCreate(lock_t lock) {
   // on failure
   
   // creating a condition variable should be an atomic operation
-  int intrs;
-  cond_t c;
-  intrs = DisableIntrs();
-  for(c=0; c<MAX_CONDS; c++) {
-    // the inuse flag should indicate whether the condition variable
-    // is being used by any process
-    if(conds[c].inuse==0) {
-      conds[c].inuse = 1;
-      break;
-    }
-  }
-  RestoreIntrs(intrs);
+  // int intrs;
+  // cond_t c;
+  // intrs = DisableIntrs();
+  // for(c=0; c<MAX_CONDS; c++) {
+  //   // the inuse flag should indicate whether the condition variable
+  //   // is being used by any process
+  //   if(conds[c].inuse==0) {
+  //     conds[c].inuse = 1;
+  //     break;
+  //   }
+  // }
+  // RestoreIntrs(intrs);
   
-  if(c==MAX_CONDS) return INVALID_COND;
-  if (CondInit(&conds[c]) != SYNC_SUCCESS) return INVALID_COND;
-  // associate the lock with this condition variable
-  if (lock < 0) return INVALID_COND;
-  if (lock >= MAX_LOCKS) return INVALID_COND;
-  if (!locks[lock].inuse)    return INVALID_COND;
-  conds[c].lock = lock;
-  return c;
+  // if(c==MAX_CONDS) return INVALID_COND;
+  // if (CondInit(&conds[c]) != SYNC_SUCCESS) return INVALID_COND;
+  // // associate the lock with this condition variable
+  // if (lock < 0) return INVALID_COND;
+  // if (lock >= MAX_LOCKS) return INVALID_COND;
+  // if (!locks[lock].inuse)    return INVALID_COND;
+  // conds[c].lock = lock;
+  // return c;
 
 
   return SYNC_FAIL;
@@ -426,40 +426,40 @@ cond_t CondCreate(lock_t lock) {
 //---------------------------------------------------------------------------
 int CondHandleWait(cond_t c) {
   // Your code goes here
-  if (c < 0) return SYNC_FAIL;
-  if (c >= MAX_CONDS) return SYNC_FAIL;
-  if (!conds[c].inuse)    return SYNC_FAIL;
-  if (locks[conds[c].lock].pid != GetCurrentPid()) {
-    dbprintf('s', "CondHandleWait: Proc %d does not own lock %d.\n", GetCurrentPid(), conds[c].lock);
-    return SYNC_FAIL;
-  }
-  // release the lock and go to sleep on the condition variable
-  if (LockRelease(&locks[conds[c].lock]) != SYNC_SUCCESS) {
-    dbprintf('s', "CondHandleWait: Proc %d could not release lock %d.\n", GetCurrentPid(), conds[c].lock);
-    return SYNC_FAIL;
-  }
-  Link	*l;
-  int		intrval;  
-  intrval = DisableIntrs ();
-  dbprintf ('I', "CondHandleWait: Old interrupt value was 0x%x.\n", intrval);
-  dbprintf ('s', "CondHandleWait: Proc %d waiting on cond %d.\n", GetCurrentPid(), (int)(c));
-  dbprintf('s', "CondHandleWait: putting process %d to sleep\n", GetCurrentPid());
-  if ((l = AQueueAllocLink ((void *)currentPCB)) == NULL) {
-    printf("FATAL ERROR: could not allocate link for condition variable queue in CondHandleWait!\n");
-    exitsim();
-  }
-  if (AQueueInsertLast (&conds[c].waiting, l) != QUEUE_SUCCESS) {
-    printf("FATAL ERROR: could not insert new link into condition variable waiting queue in CondHandleWait!\n");
-    exitsim();
-  }
-  ProcessSleep();
-  RestoreIntrs (intrval);
-  // when the process wakes up, it should have the lock
-  if (LockAcquire(&locks[conds[c].lock]) != SYNC_SUCCESS) {
-    dbprintf('s', "CondHandleWait: Proc %d could not reacquire lock %d.\n", GetCurrentPid(), conds[c].lock);
-    return SYNC_FAIL;
-  }
-  dbprintf('s', "CondHandleWait: Proc %d reacquired lock %d.\n", GetCurrentPid(), conds[c].lock);
+  // if (c < 0) return SYNC_FAIL;
+  // if (c >= MAX_CONDS) return SYNC_FAIL;
+  // if (!conds[c].inuse)    return SYNC_FAIL;
+  // if (locks[conds[c].lock].pid != GetCurrentPid()) {
+  //   dbprintf('s', "CondHandleWait: Proc %d does not own lock %d.\n", GetCurrentPid(), conds[c].lock);
+  //   return SYNC_FAIL;
+  // }
+  // // release the lock and go to sleep on the condition variable
+  // if (LockRelease(&locks[conds[c].lock]) != SYNC_SUCCESS) {
+  //   dbprintf('s', "CondHandleWait: Proc %d could not release lock %d.\n", GetCurrentPid(), conds[c].lock);
+  //   return SYNC_FAIL;
+  // }
+  // Link	*l;
+  // int		intrval;  
+  // intrval = DisableIntrs ();
+  // dbprintf ('I', "CondHandleWait: Old interrupt value was 0x%x.\n", intrval);
+  // dbprintf ('s', "CondHandleWait: Proc %d waiting on cond %d.\n", GetCurrentPid(), (int)(c));
+  // dbprintf('s', "CondHandleWait: putting process %d to sleep\n", GetCurrentPid());
+  // if ((l = AQueueAllocLink ((void *)currentPCB)) == NULL) {
+  //   printf("FATAL ERROR: could not allocate link for condition variable queue in CondHandleWait!\n");
+  //   exitsim();
+  // }
+  // if (AQueueInsertLast (&conds[c].waiting, l) != QUEUE_SUCCESS) {
+  //   printf("FATAL ERROR: could not insert new link into condition variable waiting queue in CondHandleWait!\n");
+  //   exitsim();
+  // }
+  // ProcessSleep();
+  // RestoreIntrs (intrval);
+  // // when the process wakes up, it should have the lock
+  // if (LockAcquire(&locks[conds[c].lock]) != SYNC_SUCCESS) {
+  //   dbprintf('s', "CondHandleWait: Proc %d could not reacquire lock %d.\n", GetCurrentPid(), conds[c].lock);
+  //   return SYNC_FAIL;
+  // }
+  // dbprintf('s', "CondHandleWait: Proc %d reacquired lock %d.\n", GetCurrentPid(), conds[c].lock);
   return SYNC_SUCCESS;
 }
 
@@ -481,36 +481,36 @@ int CondHandleWait(cond_t c) {
 //---------------------------------------------------------------------------
 int CondHandleSignal(cond_t c) {
   // Your code goes here
-  if (c < 0) return SYNC_FAIL;
-  if (c >= MAX_CONDS) return SYNC_FAIL;
-  if (!conds[c].inuse)    return SYNC_FAIL;
-  if (locks[conds[c].lock].pid != GetCurrentPid()) {
-    dbprintf('s', "CondHandleSignal: Proc %d does not own lock %d.\n", GetCurrentPid(), conds[c].lock);
-    return SYNC_FAIL;
-  }
-  Link *l;
-  int	intrs;
-  PCB *pcb; 
-  if (!AQueueEmpty(&conds[c].waiting)) { // there is a process to wake up
-    l = AQueueFirst(&conds[c].waiting);
-    pcb = (PCB *)AQueueObject(l);
-    if (AQueueRemove(&l) != QUEUE_SUCCESS) { 
-      printf("FATAL ERROR: could not remove link from condition variable queue in CondHandleSignal!\n");
-      exitsim();
-    }
-    dbprintf ('s', "CondHandleSignal: Waking up PID %d, transferring lock.\n", (int)(GetPidFromAddress(pcb)));
-    // transfer the lock to the woken up process
-    if (LockTransfer(&locks[conds[c].lock], pcb) != SYNC_SUCCESS) {
-      dbprintf('s', "CondHandleSignal: Proc %d could not transfer lock %d.\n", GetCurrentPid(), conds[c].lock);
-      return SYNC_FAIL;
-    }
-    ProcessWakeup (pcb);
-    // put itself to sleep
-    intrs = DisableIntrs ();
-    dbprintf ('s', "CondHandleSignal: Proc %d going to sleep.\n", GetCurrentPid());
-    ProcessSleep();
-    RestoreIntrs (intrs);
-  }
+  // if (c < 0) return SYNC_FAIL;
+  // if (c >= MAX_CONDS) return SYNC_FAIL;
+  // if (!conds[c].inuse)    return SYNC_FAIL;
+  // if (locks[conds[c].lock].pid != GetCurrentPid()) {
+  //   dbprintf('s', "CondHandleSignal: Proc %d does not own lock %d.\n", GetCurrentPid(), conds[c].lock);
+  //   return SYNC_FAIL;
+  // }
+  // Link *l;
+  // int	intrs;
+  // PCB *pcb; 
+  // if (!AQueueEmpty(&conds[c].waiting)) { // there is a process to wake up
+  //   l = AQueueFirst(&conds[c].waiting);
+  //   pcb = (PCB *)AQueueObject(l);
+  //   if (AQueueRemove(&l) != QUEUE_SUCCESS) { 
+  //     printf("FATAL ERROR: could not remove link from condition variable queue in CondHandleSignal!\n");
+  //     exitsim();
+  //   }
+  //   dbprintf ('s', "CondHandleSignal: Waking up PID %d, transferring lock.\n", (int)(GetPidFromAddress(pcb)));
+  //   // transfer the lock to the woken up process
+  //   if (LockTransfer(&locks[conds[c].lock], pcb) != SYNC_SUCCESS) {
+  //     dbprintf('s', "CondHandleSignal: Proc %d could not transfer lock %d.\n", GetCurrentPid(), conds[c].lock);
+  //     return SYNC_FAIL;
+  //   }
+  //   ProcessWakeup (pcb);
+  //   // put itself to sleep
+  //   intrs = DisableIntrs ();
+  //   dbprintf ('s', "CondHandleSignal: Proc %d going to sleep.\n", GetCurrentPid());
+  //   ProcessSleep();
+  //   RestoreIntrs (intrs);
+  // }
   
   return SYNC_SUCCESS;
 }

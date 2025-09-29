@@ -38,13 +38,13 @@ void main (int argc, char *argv[])
     Printf("Could not map the shared page to virtual address in "); Printf(argv[0]); Printf(", exiting..\n");
     Exit();
   }
-
   // Put some values in the shared memory, to be read by other processes
   mc->start = 0;
   mc->end = 0;
-  mc->count = 0;
   mc->buffer_lock = lock_create();
-
+  mc->full = sem_create(0);  // Initially, buffer is empty
+  mc->empty = sem_create(BUFFER_SIZE-1); // Initially, buffer has BUFFER_SIZE-1
+  
   // Create semaphore to not exit this process until all other processes 
   // have signalled that they are complete.  To do this, we will initialize
   // the semaphore to (-1) * (number of signals), where "number of signals"
@@ -66,7 +66,8 @@ void main (int argc, char *argv[])
   // process_create with a NULL argument so that the operating system
   // knows how many arguments you are sending.
   for(i=0; i<numprocs; i++) {
-    process_create(FILENAME_TO_RUN, h_mem_str, s_procs_completed_str, NULL);
+    process_create(PRODUCER_TO_RUN, h_mem_str, s_procs_completed_str, NULL);
+    process_create(CONSUMER_TO_RUN, h_mem_str, s_procs_completed_str, NULL);
     Printf("Process %d created\n", i);
   }
 

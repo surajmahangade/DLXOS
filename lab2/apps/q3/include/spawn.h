@@ -14,12 +14,15 @@ typedef struct mem_buffer {
   char buffer[BUFFER_SIZE];
   int start;
   int end;
-  int count;
-  int chars_produced; // Global counter for total characters produced
-  int chars_consumed; // Global counter for total characters consumed
+  // int count;
+  // int chars_produced; // Global counter for total characters produced
+  // int chars_consumed; // Global counter for total characters consumed
   sem_t full;
   sem_t empty; 
+  lock_t buffer_lock;
 } mem_buffer;
 
-#define FILENAME_TO_RUN "spawn_me.dlx.obj"
+
+#define CONSUMER_TO_RUN "consumer.dlx.obj"
+#define PRODUCER_TO_RUN "producer.dlx.obj"
 #endif
