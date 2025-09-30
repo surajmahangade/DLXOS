@@ -75,13 +75,6 @@ void Producer(mem_buffer *mc, int process_id) {
   if (chars_produced < message_len) {
     lock_acquire(mc->buffer_lock);
     
-    // Check if the buffer is full
-    if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
-      Printf("something wrong: buffer full\n");
-      lock_release(mc->buffer_lock);
-      return;
-    }
-    
     // Get character from MESSAGE
     item = MESSAGE[chars_produced];
     // Add the character to the buffer

@@ -81,15 +81,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
   // Printf("Consumer %d: Passed full semaphore. Chars consumed so far: %d\n", process_id, chars_consumed);
   if (chars_consumed < message_len) {
     lock_acquire(mc->buffer_lock);
-    
-    // Check if the buffer is empty
-    if (mc->start == mc->end) {
-      Printf("something wrong: buffer empty\n");
-      lock_release(mc->buffer_lock);
-      // Small delay before retrying
-      return;
-    }
-    
+        
     current_item = mc->buffer[mc->start];
     
     // Sequential check
