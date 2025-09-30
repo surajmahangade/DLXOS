@@ -425,6 +425,8 @@ cond_t CondCreate(lock_t lock) {
 //	transfers the lock to it.
 //---------------------------------------------------------------------------
 int CondHandleWait(cond_t c) {
+  Link *l;
+  int		intrval;
   // Your code goes here
   if (c < 0) return SYNC_FAIL;
   if (c >= MAX_CONDS) return SYNC_FAIL;
@@ -438,8 +440,6 @@ int CondHandleWait(cond_t c) {
     dbprintf('s', "CondHandleWait: Proc %d could not release lock %d.\n", GetCurrentPid(), conds[c].lock);
     return SYNC_FAIL;
   }
-  Link	*l;
-  int		intrval;  
   intrval = DisableIntrs ();
   dbprintf ('I', "CondHandleWait: Old interrupt value was 0x%x.\n", intrval);
   dbprintf ('s', "CondHandleWait: Proc %d waiting on cond %d.\n", GetCurrentPid(), (int)(c));
@@ -480,6 +480,9 @@ int CondHandleWait(cond_t c) {
 //	wakes up again, since it is still in the critical section.
 //---------------------------------------------------------------------------
 int CondHandleSignal(cond_t c) {
+  Link *l;
+  int	intrs;
+  PCB *pcb; 
   // Your code goes here
   if (c < 0) return SYNC_FAIL;
   if (c >= MAX_CONDS) return SYNC_FAIL;
@@ -488,9 +491,6 @@ int CondHandleSignal(cond_t c) {
     dbprintf('s', "CondHandleSignal: Proc %d does not own lock %d.\n", GetCurrentPid(), conds[c].lock);
     return SYNC_FAIL;
   }
-  Link *l;
-  int	intrs;
-  PCB *pcb; 
   if (!AQueueEmpty(&conds[c].waiting)) { // there is a process to wake up
     l = AQueueFirst(&conds[c].waiting);
     pcb = (PCB *)AQueueObject(l);
