@@ -357,6 +357,18 @@ int LockTransfer(Lock *k, PCB *pcb) {
   return SYNC_SUCCESS;
 }
 
+
+// Cond Init function
+int CondInit(Cond *c) {
+  if (!c) return SYNC_FAIL;
+  if (AQueueInit (&c->waiting) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not initialize condition variable waiting queue in CondInit!\n");
+    exitsim();
+  }
+  c->lock = INVALID_LOCK;
+  return SYNC_SUCCESS;
+}
+
 //--------------------------------------------------------------------------
 //	CondCreate
 //
