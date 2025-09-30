@@ -39,11 +39,11 @@ void main (int argc, char *argv[])
     Exit();
   }
   // Put some values in the shared memory, to be read by other processes
-  lock_t buffer_lock = LockCreate();
+  lock_t buffer_lock = lock_create();
   mc->start = 0;
   mc->end = 0;
-  mc->notfull = CondCreate(buffer_lock);
-  mc->notempty = CondCreate(buffer_lock);
+  mc->notfull = cond_create(buffer_lock);
+  mc->notempty = cond_create(buffer_lock);
   
   // Create semaphore to not exit this process until all other processes 
   // have signalled that they are complete.  To do this, we will initialize
