@@ -16,6 +16,7 @@ typedef struct mem_buffer {
   int end;
   cond_t notfull; // condition variable to indicate buffer is not full
   cond_t notempty; // condition variable to indicate buffer is not empty
+  lock_t buffer_lock; // lock to protect access to buffer
 } mem_buffer;
 
 

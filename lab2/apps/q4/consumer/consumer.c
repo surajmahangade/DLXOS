@@ -92,8 +92,8 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     
     // Sequential check
     if (current_item != expected_char) {
-      lock_release(mc->buffer_lock);
-      sem_signal(mc->full);  // Put the item back for correct consumer
+      // lock_release(mc->buffer_lock);
+      // sem_signal(mc->full);  // Put the item back for correct consumer
       return;  // Stop consuming on sequential error
     }
     

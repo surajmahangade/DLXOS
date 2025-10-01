@@ -74,11 +74,11 @@ void Producer(mem_buffer *mc, int process_id) {
   if (chars_produced < message_len) {
     
     // Check if the buffer is full
-    if ((mc->end + 1) % BUFFER_SIZE == mc->start) {
+    while ((mc->end + 1) % BUFFER_SIZE == mc->start) {
       Printf("something wrong: buffer full\n");
       cond_wait(mc->notfull);
       
-      return;
+      continue;
     }
     
     // Get character from MESSAGE

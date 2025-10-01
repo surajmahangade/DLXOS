@@ -15,7 +15,8 @@ void main (int argc, char *argv[])
   sem_t s_procs_completed;        // Semaphore used to wait until all spawned processes have completed
   char h_mem_str[10];             // Used as command-line argument to pass mem_handle to new processes
   char s_procs_completed_str[10]; // Used as command-line argument to pass page_mapped handle to new processes
-
+  lock_t buffer_lock;
+  
   if (argc != 2) {
     Printf("Usage: "); Printf(argv[0]); Printf(" <number of processes to create>\n");
     Exit();
@@ -39,7 +40,7 @@ void main (int argc, char *argv[])
     Exit();
   }
   // Put some values in the shared memory, to be read by other processes
-  lock_t buffer_lock = lock_create();
+  buffer_lock = lock_create();
   mc->start = 0;
   mc->end = 0;
   mc->notfull = cond_create(buffer_lock);
