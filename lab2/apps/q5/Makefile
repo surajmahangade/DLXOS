@@ -13,6 +13,7 @@ clean:
 	cd reaction3; make clean
 	cd reaction4; make clean
 	cd reaction5; make clean
-
+num_N3 ?= 1
+num_H2O ?= 2
 run:
-	cd ../../bin; dlxsim -x os.dlx.obj -a -u makeprocs.dlx.obj 1 2; ee469_fixterminal
+	cd ../../bin; dlxsim -x os.dlx.obj -a -u makeprocs.dlx.obj num_N3 num_H2O; ee469_fixterminal
