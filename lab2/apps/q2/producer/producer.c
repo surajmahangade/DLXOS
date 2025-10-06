@@ -57,7 +57,7 @@ void main (int argc, char *argv[])
     Producer(mc, my_pid);
     }
 
-    Printf("Producer: PID %d Produced : %d chars\n", my_pid, chars_produced);
+    // Printf("Producer: PID %d Produced : %d chars\n", my_pid, chars_produced);
 
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");

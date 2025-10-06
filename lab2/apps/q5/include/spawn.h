@@ -7,9 +7,6 @@ typedef struct missile_code {
   char really_important_char;
 } missile_code;
 
-#define BUFFER_SIZE 4
-#define MESSAGE "0123456789"
-
 typedef struct mem_buffer {
   sem_t N3; // number of nitrogen
   sem_t H2; // number of hydrogen

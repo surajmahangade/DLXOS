@@ -7,7 +7,7 @@ typedef struct missile_code {
   char really_important_char;
 } missile_code;
 
-#define BUFFER_SIZE 4
+#define BUFFER_SIZE 32
 #define MESSAGE "0123456789"
 
 typedef struct mem_buffer {

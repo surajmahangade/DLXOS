@@ -36,5 +36,5 @@ Examples
   - make q4 NumProcesses=4
 
 - Build & run q5 (chemical):
-  - make q5 num_N3=3 num_H2O=10
+  - make q5 num_N3=2 num_H2O=4
 

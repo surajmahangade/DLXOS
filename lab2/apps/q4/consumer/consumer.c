@@ -65,7 +65,7 @@ void main (int argc, char *argv[])
       Consumer(mc, my_pid, final_string);
   }
   
-  Printf("consumer: PID %d Consumed : %d chars\n", my_pid, chars_consumed);
+  // Printf("consumer: PID %d Consumed : %d chars\n", my_pid, chars_consumed);
 
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
@@ -82,7 +82,7 @@ void Consumer(mem_buffer *mc, int process_id, char *final_string) {
     
     // Check if the buffer is empty
     if (mc->start == mc->end) {
-      Printf("something wrong: buffer empty\n");
+      // Printf("something wrong: buffer empty\n");
       cond_wait(mc->notempty);
       // Small delay before retrying
       return;

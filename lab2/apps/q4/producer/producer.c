@@ -57,7 +57,7 @@ void main (int argc, char *argv[])
     Producer(mc, my_pid);
     }
 
-    Printf("Producer: PID %d Produced : %d chars\n", my_pid, chars_produced);
+    // Printf("Producer: PID %d Produced : %d chars\n", my_pid, chars_produced);
 
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
@@ -75,7 +75,7 @@ void Producer(mem_buffer *mc, int process_id) {
     
     // Check if the buffer is full
     while ((mc->end + 1) % BUFFER_SIZE == mc->start) {
-      Printf("something wrong: buffer full\n");
+      // Printf("something wrong: buffer full\n");
       cond_wait(mc->notfull);
       
       continue;
