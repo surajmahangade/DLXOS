@@ -433,22 +433,65 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // equal to the last 4-byte-aligned address in physical page
   // for the system stack.
   //---------------------------------------------------------
-  pcb->npages = 6; // total number of pages allocated to this process
-  for (i = 0; i < pcb->npages; i++) {
+  //----------------------------------------------------------------------
+
+  dbprintf('p', "ProcessFork (%d): Allocating pages for new process\n", GetCurrentPid());
+
+  // 1. Allocate system stack page (NOT in page table - uses physical addresses)
+  int sys_stack_page = MemoryAllocPage();
+  if (sys_stack_page < 0) {
+    printf("FATAL ERROR: could not allocate system stack page in ProcessFork!\n");
+    ProcessFreeResources(pcb);
+    exitsim();
+  }
+
+  pcb->sysStackArea = sys_stack_page << MEM_L1FIELD_FIRST_BITNUM; // Physical address
+  dbprintf('p', "ProcessFork: allocated system stack at physical page %d (addr 0x%x)\n", 
+          sys_stack_page, pcb->sysStackArea);
+
+  // Set up the stackframe pointer to point to the top of the system stack
+  // Must be 4-byte aligned, so use (base + size - 4)
+  stackframe = (uint32 *)(pcb->sysStackArea + MEM_PAGESIZE - 4);
+  dbprintf('p', "ProcessFork: system stack top at 0x%x\n", (int)stackframe);
+
+  // 2. Allocate 4 pages for code/data (virtual pages 0-3)
+  for (i = 0; i < 4; i++) {
     int page = MemoryAllocPage();
     if (page < 0) {
-      printf("FATAL ERROR: could not allocate enough pages for new process in ProcessFork!\n");
+      printf("FATAL ERROR: could not allocate code page %d in ProcessFork!\n", i);
+      // Free what we've allocated so far
+      MemoryFreePage(sys_stack_page);
+      for (int j = 0; j < i; j++) {
+        int p = (pcb->pagetable[j] & MEM_ADDRESS_OFFSET_MASK) >> MEM_L1FIELD_FIRST_BITNUM;
+        MemoryFreePage(p);
+      }
+      ProcessFreeResources(pcb);
       exitsim();
     }
-    pcb->pagetable[i] = (page << MEM_L1FIELD_FIRST_BITNUM) | MEM_PTE_VALID | MEM_PTE_DIRTY;
-    dbprintf ('p', "ProcessFork: allocated page %d at 0x%x for PCB 0x%x\n", i, page << MEM_L1FIELD_FIRST_BITNUM, (int)pcb);
+    pcb->pagetable[i] = MemorySetupPte(page);
+    dbprintf('p', "ProcessFork: allocated page %d at virtual page %d (PTE=0x%x)\n", 
+            page, i, pcb->pagetable[i]);
   }
-  // Set up the stackframe pointer to point to the top of the system stack area.
-  stackframe = (uint32 *)( (pcb->pagetable[0] & MEM_ADDRESS_OFFSET_MASK) + MEM_PAGESIZE );
-  dbprintf ('p', "ProcessFork: system stack top at 0x%x for PCB 0x%x\n", (int)stackframe, (int)pcb);
 
+  // 3. Allocate 1 page for user stack at top of virtual address space (virtual page 1023)
+  int user_stack_page = MemoryAllocPage();
+  if (user_stack_page < 0) {
+    printf("FATAL ERROR: could not allocate user stack page in ProcessFork!\n");
+    // Free everything allocated so far
+    MemoryFreePage(sys_stack_page);
+    for (int j = 0; j < 4; j++) {
+      int p = (pcb->pagetable[j] & MEM_ADDRESS_OFFSET_MASK) >> MEM_L1FIELD_FIRST_BITNUM;
+      MemoryFreePage(p);
+    }
+    ProcessFreeResources(pcb);
+    exitsim();
+  }
 
+  pcb->pagetable[MEM_MAX_VIRTUAL_PAGE] = MemorySetupPte(user_stack_page);
+  dbprintf('p', "ProcessFork: allocated user stack at virtual page %d (PTE=0x%x)\n",
+          MEM_MAX_VIRTUAL_PAGE, pcb->pagetable[MEM_MAX_VIRTUAL_PAGE]);
 
+  pcb->npages = 5; // 4 code + 1 user stack (system stack doesn't count in page table)
 
 
   // Now that the stack frame points at the bottom of the system stack memory area, we need to
@@ -481,7 +524,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   //----------------------------------------------------------------------
   stackframe[PROCESS_STACK_PTBASE] = (uint32)(pcb->pagetable);
   stackframe[PROCESS_STACK_PTSIZE] = MEM_L1TABLE_SIZE;
-  stackframe[PROCESS_STACK_PTBITS] = MEM_L1FIELD_FIRST_BITNUM;
+  stackframe[PROCESS_STACK_PTBITS] = (MEM_L1FIELD_FIRST_BITNUM << 16) | MEM_L1FIELD_FIRST_BITNUM;
 
   if (isUser) {
     dbprintf ('p', "About to load %s\n", name);
@@ -513,7 +556,10 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     //----------------------------------------------------------------------
 
     // setting the stack pointer to the top of user stack area
-    stackframe[PROCESS_STACK_USER_STACKPOINTER] = MEM_MAX_VIRTUAL_ADDRESS + 1;
+    // User stack pointer should be 4-byte aligned at top of virtual address space
+    stackframe[PROCESS_STACK_USER_STACKPOINTER] = (MEM_MAX_VIRTUAL_ADDRESS + 1) & ~0x3;
+    dbprintf('p', "ProcessFork: Initial user stack pointer = 0x%x\n", 
+            stackframe[PROCESS_STACK_USER_STACKPOINTER]);
     dbprintf ('p', "Initial user stack pointer = 0x%x\n", stackframe[PROCESS_STACK_USER_STACKPOINTER]);
 
 
