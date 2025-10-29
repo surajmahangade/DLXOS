@@ -12,10 +12,12 @@
 #include "queue.h"
 
 // num_pages = size_of_memory / size_of_one_page
-static uint32 freemap[MEM_MAX_PAGES]; // Bitmap for free pages
+static uint32 freemap[MEM_MAX_PAGES / 32 + 1];
 static uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
+
+static uint32 page_refcount[MEM_MAX_PAGES];
 
 
 //----------------------------------------------------------------------
@@ -61,30 +63,42 @@ void MemoryModuleInit() {
   int memsize = MemoryGetSize();
   int os_pages;
   int total_pages;
+  uint32 os_end_addr;
   
-  // Calculate where usable memory starts (after OS)
-  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
+  os_end_addr = (uint32)&lastosaddress;
+  os_pages = (os_end_addr + MEM_PAGESIZE - 1) / MEM_PAGESIZE;
   
-  // Calculate total available pages in the system
-  total_pages = (memsize - pagestart) / MEM_PAGESIZE;
-  
-  // Can't have more pages than our maximum
+  total_pages = memsize / MEM_PAGESIZE;
   if (total_pages > MEM_MAX_PAGES) {
     total_pages = MEM_MAX_PAGES;
   }
   
-  nfreepages = total_pages;
   freemapmax = total_pages;
+  nfreepages = total_pages - os_pages;
   
-  dbprintf('m', "MemoryModuleInit: memsize=0x%x, pagestart=0x%x, total_pages=%d\n",
-      memsize, pagestart, total_pages);
+  dbprintf('m', "MemoryModuleInit: memsize=0x%x, lastosaddress=0x%x\n",
+           memsize, os_end_addr);
+  dbprintf('m', "MemoryModuleInit: os_pages=%d, total_pages=%d, nfreepages=%d\n",
+           os_pages, total_pages, nfreepages);
   
-  // Initialize freemap - all pages start as free
+  // Initialize freemap
   for (i = 0; i < (MEM_MAX_PAGES / 32 + 1); i++) {
     freemap[i] = 0;
   }
   
-  dbprintf('m', "MemoryModuleInit: initialized with %d free pages\n", nfreepages);
+  // Mark OS pages as used
+  for (i = 0; i < os_pages; i++) {
+    int word = i / 32;
+    int bit = i % 32;
+    freemap[word] |= (1 << bit);
+  }
+  
+  // Initialize reference counters
+  for (i = 0; i < MEM_MAX_PAGES; i++) {
+    page_refcount[i] = 0;
+  }
+  
+  dbprintf('m', "MemoryModuleInit: initialized reference counters\n");
 }
 
 //----------------------------------------------------------------------
@@ -373,3 +387,129 @@ void MemoryFreePage(uint32 page) {
 // code for question 3
 // void *malloc(PCB *pcb, int size) {}
 // int mfree(PCB *pcb, void *ptr) {}
+
+// Increase reference count for a page
+void MemoryIncreaseRefcount(uint32 page) {
+  if (page >= freemapmax) {
+    dbprintf('m', "MemoryIncreaseRefcount: invalid page %d\n", page);
+    return;
+  }
+  
+  page_refcount[page]++;
+  dbprintf('m', "MemoryIncreaseRefcount: page %d refcount now %d\n",
+           page, page_refcount[page]);
+}
+
+// Decrease reference count for a page, free if reaches 0
+void MemoryDecreaseRefcount(uint32 page) {
+  if (page >= freemapmax) {
+    dbprintf('m', "MemoryDecreaseRefcount: invalid page %d\n", page);
+    return;
+  }
+  
+  if (page_refcount[page] == 0) {
+    dbprintf('m', "MemoryDecreaseRefcount: warning - page %d refcount already 0\n", page);
+    return;
+  }
+  
+  page_refcount[page]--;
+  dbprintf('m', "MemoryDecreaseRefcount: page %d refcount now %d\n",
+           page, page_refcount[page]);
+  
+  // If refcount reaches 0, free the page
+  if (page_refcount[page] == 0) {
+    MemoryFreePage(page);
+  }
+}
+
+// Get reference count for a page
+uint32 MemoryGetRefcount(uint32 page) {
+  if (page >= freemapmax) {
+    return 0;
+  }
+  return page_refcount[page];
+}
+
+
+int MemoryROPAccessHandler(PCB *pcb) {
+  uint32 fault_address;
+  uint32 fault_page;
+  uint32 old_pte;
+  uint32 old_physaddr;
+  uint32 old_page;
+  uint32 new_page;
+  unsigned char *old_page_addr;
+  unsigned char *new_page_addr;
+  int i;
+  
+  // Get the faulting address
+  fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  fault_page = fault_address >> MEM_L1FIELD_FIRST_BITNUM;
+  
+  dbprintf('m', "MemoryROPAccessHandler (%d): fault_addr=0x%x (page %d)\n",
+           GetCurrentPid(), fault_address, fault_page);
+  
+  // Get the PTE for the faulting page
+  old_pte = pcb->pagetable[fault_page];
+  
+  // Verify it's a valid page marked read-only
+  if ((old_pte & MEM_PTE_VALID) == 0) {
+    printf("ERROR: ROP access on invalid page in process %d\n", GetCurrentPid());
+    ProcessKill();
+    return MEM_FAIL;
+  }
+  
+  if ((old_pte & MEM_PTE_READONLY) == 0) {
+    printf("ERROR: ROP access on non-readonly page in process %d\n", GetCurrentPid());
+    ProcessKill();
+    return MEM_FAIL;
+  }
+  
+  // Extract physical address and page number
+  old_physaddr = old_pte & MEM_ADDRESS_OFFSET_MASK;
+  old_page = old_physaddr >> MEM_L1FIELD_FIRST_BITNUM;
+  
+  dbprintf('m', "MemoryROPAccessHandler (%d): old page %d, refcount %d\n",
+           GetCurrentPid(), old_page, MemoryGetRefcount(old_page));
+  
+  // Check reference count
+  if (MemoryGetRefcount(old_page) > 1) {
+    // Multiple processes sharing this page - need to copy
+    dbprintf('m', "MemoryROPAccessHandler (%d): copying page %d (refcount > 1)\n",
+             GetCurrentPid(), old_page);
+    
+    // Allocate new page
+    new_page = MemoryAllocPage();
+    if (new_page < 0) {
+      printf("FATAL ERROR: Out of memory in MemoryROPAccessHandler for PID %d\n",
+             GetCurrentPid());
+      ProcessKill();
+      return MEM_FAIL;
+    }
+    
+    // Copy data from old page to new page
+    old_page_addr = (unsigned char *)(old_physaddr);
+    new_page_addr = (unsigned char *)(new_page << MEM_L1FIELD_FIRST_BITNUM);
+    
+    bcopy(old_page_addr, new_page_addr, MEM_PAGESIZE);
+    
+    // Update PTE to point to new page, mark as read/write
+    pcb->pagetable[fault_page] = (new_page << MEM_L1FIELD_FIRST_BITNUM) | MEM_PTE_VALID;
+    
+    // Update reference counts
+    MemoryDecreaseRefcount(old_page);
+    MemoryIncreaseRefcount(new_page);
+    
+    dbprintf('m', "MemoryROPAccessHandler (%d): copied page %d to new page %d\n",
+             GetCurrentPid(), old_page, new_page);
+    
+  } else {
+    // Only one process using this page - just mark as read/write
+    dbprintf('m', "MemoryROPAccessHandler (%d): marking page %d as read/write (refcount = 1)\n",
+             GetCurrentPid(), old_page);
+    
+    pcb->pagetable[fault_page] = old_physaddr | MEM_PTE_VALID;
+  }
+  
+  return MEM_SUCCESS;
+}

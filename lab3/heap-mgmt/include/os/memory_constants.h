@@ -18,7 +18,13 @@
 // Be sure to prepend any constant names with "MEM_" so 
 // that the grader knows they are defined in this file.
 
-//--------------------------------------------------------
+//-------------------------------------------------------
+
+// Buddy allocation constants for q3
+#define MEM_HEAP_PAGES 1  // Heap is 1 page (4KB) for Question 3
+#define MEM_BUDDY_MIN_SIZE 32  // Minimum block size is 32 bytes (order 0)
+#define MEM_BUDDY_MAX_ORDER 7  // log2(4096/32) = 7
+
 
 // Page offset uses 12 bits (2^12 = 4096 bytes per page)
 #define MEM_L1FIELD_FIRST_BITNUM 12

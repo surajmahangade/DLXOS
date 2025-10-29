@@ -93,6 +93,11 @@ void ProcessModuleInit () {
       pcbs[i].npages = 0;
       pcbs[i].sysStackArea = 0;
 
+      // Initialize heap fields for q3
+      pcbs[i].heap_page = 0;
+      pcbs[i].heap_vaddr = 0;
+      pcbs[i].heap_root = NULL;
+
 
     // Finally, insert the link into the queue
     if (AQueueInsertFirst(&freepcbs, pcbs[i].l) != QUEUE_SUCCESS) {
@@ -160,6 +165,11 @@ void ProcessFreeResources (PCB *pcb) {
     pcb->sysStackArea = 0;
   }
   
+  // Reset heap fields for q3
+  pcb->heap_page = 0;
+  pcb->heap_vaddr = 0;
+  pcb->heap_root = NULL;
+
   pcb->npages = 0;
 
 

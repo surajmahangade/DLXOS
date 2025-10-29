@@ -145,21 +145,22 @@ void ProcessFreeResources (PCB *pcb) {
   // STUDENT: Free any memory resources on process death here.
   //------------------------------------------------------------
 
+  // Free all pages in the page table (with reference counting)
   for (i = 0; i < MEM_L1TABLE_SIZE; i++) {
     if (pcb->pagetable[i] & MEM_PTE_VALID) {
       uint32 physAddr = pcb->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
-      uint32 page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
-      MemoryFreePage(page);
+      uint32 page = physAddr >> MEM_L1FIELD_FIRST_BITNUM;
+      MemoryDecreaseRefcount(page);  // Use refcount-aware free
       pcb->pagetable[i] = 0;
     }
   }
   
+  // Free system stack page (with reference counting)
   if (pcb->sysStackArea != 0) {
-    uint32 sysStackPage = (pcb->sysStackArea - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
-    MemoryFreePage(sysStackPage);
+    uint32 sysStackPage = pcb->sysStackArea >> MEM_L1FIELD_FIRST_BITNUM;
+    MemoryDecreaseRefcount(sysStackPage);  // Use refcount-aware free
     pcb->sysStackArea = 0;
   }
-  
   pcb->npages = 0;
 
 
@@ -364,6 +365,134 @@ void ProcessDestroy (PCB *pcb) {
 //----------------------------------------------------------------------
 static void ProcessExit () {
   exit ();
+}
+
+
+
+//----------------------------------------------------------------------
+// ProcessRealFork - Implement actual fork() with copy-on-write
+//----------------------------------------------------------------------
+int ProcessRealFork(PCB *parent) {
+  PCB *child;
+  int i;
+  uint32 physaddr;
+  uint32 page;
+  unsigned char *parent_stack;
+  unsigned char *child_stack;
+  uint32 offset;
+  int intrs;
+  
+  dbprintf('m', "ProcessRealFork (%d): forking process\n", GetPidFromAddress(parent));
+  
+  intrs = DisableIntrs();
+  
+  // Get a free PCB
+  if (AQueueEmpty(&freepcbs)) {
+    printf("FATAL ERROR: no free PCBs in ProcessRealFork!\n");
+    RestoreIntrs(intrs);
+    return -1;
+  }
+  
+  child = (PCB *)AQueueObject(AQueueFirst(&freepcbs));
+  if (AQueueRemove(&(child->l)) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not remove PCB from freepcbs in ProcessRealFork!\n");
+    RestoreIntrs(intrs);
+    return -1;
+  }
+  
+  ProcessSetStatus(child, PROCESS_STATUS_RUNNABLE);
+  RestoreIntrs(intrs);
+  
+  // Copy parent PCB to child PCB
+  bcopy((char *)parent, (char *)child, sizeof(PCB));
+  
+  dbprintf('m', "ProcessRealFork (%d): copied parent PCB to child PCB\n",
+           GetPidFromAddress(parent));
+  
+  // Copy page table and mark all pages as read-only
+  for (i = 0; i < MEM_L1TABLE_SIZE; i++) {
+    if (parent->pagetable[i] & MEM_PTE_VALID) {
+      // Copy PTE to child
+      child->pagetable[i] = parent->pagetable[i];
+      
+      // Mark both parent and child PTEs as read-only
+      parent->pagetable[i] |= MEM_PTE_READONLY;
+      child->pagetable[i] |= MEM_PTE_READONLY;
+      
+      // Increase reference count for this page
+      physaddr = parent->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
+      page = physaddr >> MEM_L1FIELD_FIRST_BITNUM;
+      MemoryIncreaseRefcount(page);
+      
+      dbprintf('m', "ProcessRealFork: shared page %d between parent and child\n", page);
+    } else {
+      child->pagetable[i] = 0;
+    }
+  }
+  
+  // Allocate new system stack for child and copy parent's system stack
+  int sysStackPage = MemoryAllocPage();
+  if (sysStackPage < 0) {
+    printf("FATAL ERROR: could not allocate system stack for child in ProcessRealFork!\n");
+    ProcessFreeResources(child);
+    return -1;
+  }
+  
+  child->sysStackArea = sysStackPage << MEM_L1FIELD_FIRST_BITNUM;
+  MemoryIncreaseRefcount(sysStackPage);
+  
+  dbprintf('m', "ProcessRealFork: allocated child system stack at phys addr 0x%x\n",
+           child->sysStackArea);
+  
+  // Copy system stack contents from parent to child
+  parent_stack = (unsigned char *)parent->sysStackArea;
+  child_stack = (unsigned char *)child->sysStackArea;
+  bcopy(parent_stack, child_stack, MEM_PAGESIZE);
+  
+  // Fix system stack pointers in child
+  // Calculate offset of parent's sysStackPtr within its system stack page
+  offset = (uint32)parent->sysStackPtr - parent->sysStackArea;
+  child->sysStackPtr = (uint32 *)(child->sysStackArea + offset);
+  
+  // Calculate offset of parent's currentSavedFrame within its system stack page
+  offset = (uint32)parent->currentSavedFrame - parent->sysStackArea;
+  child->currentSavedFrame = (uint32 *)(child->sysStackArea + offset);
+  
+  dbprintf('m', "ProcessRealFork: fixed child sysStackPtr to 0x%x\n",
+           (uint32)child->sysStackPtr);
+  dbprintf('m', "ProcessRealFork: fixed child currentSavedFrame to 0x%x\n",
+           (uint32)child->currentSavedFrame);
+  
+  // Fix PTBASE in child's saved frame to point to child's page table
+  child->currentSavedFrame[PROCESS_STACK_PTBASE] = (uint32)(child->pagetable);
+  
+  // Set return value to 0 for child (fork returns 0 in child)
+  ProcessSetResult(child, 0);
+  
+  // Set return value to child PID for parent (fork returns child PID in parent)
+  ProcessSetResult(parent, (uint32)GetPidFromAddress(child));
+  
+  // Put child on run queue
+  intrs = DisableIntrs();
+  if ((child->l = AQueueAllocLink(child)) == NULL) {
+    printf("FATAL ERROR: could not allocate link for child in ProcessRealFork!\n");
+    RestoreIntrs(intrs);
+    ProcessFreeResources(child);
+    return -1;
+  }
+  
+  if (AQueueInsertLast(&runQueue, child->l) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not insert child into runQueue in ProcessRealFork!\n");
+    RestoreIntrs(intrs);
+    ProcessFreeResources(child);
+    return -1;
+  }
+  RestoreIntrs(intrs);
+  
+  dbprintf('m', "ProcessRealFork: parent %d created child %d\n",
+           GetPidFromAddress(parent), GetPidFromAddress(child));
+  
+  return GetPidFromAddress(child);
 }
 
 

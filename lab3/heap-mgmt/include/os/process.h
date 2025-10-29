@@ -37,6 +37,9 @@ typedef struct PCB {
   uint32	*currentSavedFrame; // -> current saved frame.  MUST BE 1ST!
   uint32	*sysStackPtr;	// Current system stack pointer.  MUST BE 2ND!
   uint32	sysStackArea;	// System stack area for this process
+  uint32 heap_page;           // Physical page number for heap
+  uint32 heap_vaddr;          // Virtual address where heap starts
+  void *heap_root;            // Root of buddy tree
   unsigned int	flags;
   char		name[80];	// Process name
   uint32 pagetable[MEM_L1TABLE_SIZE]; // Statically allocated page table
