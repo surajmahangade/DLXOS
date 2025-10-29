@@ -25,7 +25,9 @@ int MemoryPageFaultHandler(PCB *pcb);
 int MemoryAllocPage(void);
 uint32 MemorySetupPte (uint32 page);
 void MemoryFreePage(uint32 page);
-void *malloc(PCB *pcb, int size);
+//for question 3
+// Heap management functions
+void *malloc(PCB *pcb, int memsize);
 int mfree(PCB *pcb, void *ptr);
 
 #endif	// _memory_h_
