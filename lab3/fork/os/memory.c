@@ -61,46 +61,43 @@ int MemoryGetSize() {
 void MemoryModuleInit() {
   int i;
   int memsize = MemoryGetSize();
-  int os_pages;
   int total_pages;
   uint32 os_end_addr;
   
+  // Calculate where usable memory starts (after OS)
   os_end_addr = (uint32)&lastosaddress;
-  os_pages = (os_end_addr + MEM_PAGESIZE - 1) / MEM_PAGESIZE;
+  pagestart = (os_end_addr + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
   
-  total_pages = memsize / MEM_PAGESIZE;
+  // Calculate total available pages in the system (after OS)
+  total_pages = (memsize - pagestart) / MEM_PAGESIZE;
+  
+  // Can't have more pages than our maximum
   if (total_pages > MEM_MAX_PAGES) {
     total_pages = MEM_MAX_PAGES;
   }
   
+  nfreepages = total_pages;
   freemapmax = total_pages;
-  nfreepages = total_pages - os_pages;
   
-  dbprintf('m', "MemoryModuleInit: memsize=0x%x, lastosaddress=0x%x\n",
-           memsize, os_end_addr);
-  dbprintf('m', "MemoryModuleInit: os_pages=%d, total_pages=%d, nfreepages=%d\n",
-           os_pages, total_pages, nfreepages);
+  dbprintf('m', "MemoryModuleInit: memsize=0x%x, lastosaddress=0x%x, pagestart=0x%x\n",
+           memsize, os_end_addr, pagestart);
+  dbprintf('m', "MemoryModuleInit: total_pages=%d, nfreepages=%d\n",
+           total_pages, nfreepages);
   
-  // Initialize freemap
+  // Initialize freemap - all pages start as free
   for (i = 0; i < (MEM_MAX_PAGES / 32 + 1); i++) {
     freemap[i] = 0;
   }
   
-  // Mark OS pages as used
-  for (i = 0; i < os_pages; i++) {
-    int word = i / 32;
-    int bit = i % 32;
-    freemap[word] |= (1 << bit);
-  }
   
-  // Initialize reference counters
+  // Initialize reference counters (for Q2 copy-on-write)
   for (i = 0; i < MEM_MAX_PAGES; i++) {
     page_refcount[i] = 0;
   }
   
-  dbprintf('m', "MemoryModuleInit: initialized reference counters\n");
+  dbprintf('m', "MemoryModuleInit: initialized with %d free pages\n", nfreepages);
+  dbprintf('m', "MemoryModuleInit: initialized reference counters for copy-on-write\n");
 }
-
 //----------------------------------------------------------------------
 //
 // MemoryTranslateUserToSystem
