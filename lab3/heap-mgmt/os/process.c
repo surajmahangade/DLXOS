@@ -457,10 +457,10 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     exitsim();
   }
   pcb->sysStackArea = pagestart + (sysStackPage << MEM_L1FIELD_FIRST_BITNUM);
-  
+
   dbprintf('m', "ProcessFork (%s): allocated system stack page %d at phys addr 0x%x\n",
-           name, sysStackPage, pcb->sysStackArea);
-  
+          name, sysStackPage, pcb->sysStackArea);
+
   // Allocate 4 pages for code/data at virtual addresses 0-3
   for (i = 0; i < 4; i++) {
     int page = MemoryAllocPage();
@@ -470,9 +470,26 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     }
     pcb->pagetable[i] = MemorySetupPte(page);
     dbprintf('m', "ProcessFork (%s): allocated code/data page %d at virtual page %d\n",
-             name, page, i);
+            name, page, i);
   }
+
+  int heapPage = MemoryAllocPage();
+  if (heapPage < 0) {
+    printf("FATAL ERROR: could not allocate initial heap page in ProcessFork!\n");
+    exitsim();
+  }
+  int heapVPage = 4;  // Heap starts at virtual page 4
+  pcb->pagetable[heapVPage] = MemorySetupPte(heapPage);
+
+  dbprintf('m', "ProcessFork (%s): allocated heap page %d at virtual page %d\n",
+          name, heapPage, heapVPage);
+
   
+  pcb->heap_vaddr_start = heapVPage << MEM_L1FIELD_FIRST_BITNUM;
+  pcb->heap_vaddr_end = pcb->heap_vaddr_start;
+  pcb->heap_pages_mapped = 1;
+  pcb->heap_root = NULL;  // Buddy tree will be initialized on first malloc()
+
   // Allocate 1 page for user stack at TOP of virtual address space
   int userStackPage = MemoryAllocPage();
   if (userStackPage < 0) {
@@ -483,10 +500,10 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   int userStackIndex = MEM_L1TABLE_SIZE - 1;
   pcb->pagetable[userStackIndex] = MemorySetupPte(userStackPage);
   dbprintf('m', "ProcessFork (%s): allocated user stack page %d at virtual page %d\n",
-           name, userStackPage, userStackIndex);
-  
-  pcb->npages = 5; // 4 for code/data + 1 for user stack (system stack not counted)
-  
+          name, userStackPage, userStackIndex);
+
+  pcb->npages = 6; // 4 for code/data + 1 for heap + 1 for user stack (system stack not counted)
+
   // Set up the stackframe pointer to point to the bottom (high address) of system stack
   // Must be 4-byte aligned
   stackframe = (uint32 *)(pcb->sysStackArea + MEM_PAGESIZE - 4);
@@ -496,10 +513,8 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   stackframe -= PROCESS_STACK_FRAME_SIZE;
   pcb->sysStackPtr = stackframe;
   pcb->currentSavedFrame = stackframe;
-  
+
   dbprintf('m', "ProcessFork (%s): stackframe = 0x%x\n", name, (int)stackframe);
-
-
 
 
   // Now that the stack frame points at the bottom of the system stack memory area, we need to
