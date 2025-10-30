@@ -611,12 +611,6 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   stackframe = (uint32 *)(pcb->sysStackArea + MEM_PAGESIZE - 4);
   dbprintf('m', "ProcessFork (%s): system stack bottom at 0x%x\n", name, (int)stackframe);
 
-  // Move stackframe up by one frame size
-  stackframe -= PROCESS_STACK_FRAME_SIZE;
-  pcb->sysStackPtr = stackframe;
-  pcb->currentSavedFrame = stackframe;
-  
-  dbprintf('m', "ProcessFork (%s): stackframe = 0x%x\n", name, (int)stackframe);
 
 
 
