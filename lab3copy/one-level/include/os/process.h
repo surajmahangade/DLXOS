@@ -39,7 +39,7 @@ typedef struct PCB {
   uint32	sysStackArea;	// System stack area for this process
   unsigned int	flags;
   char		name[80];	// Process name
-  uint32	pagetable[/* Put the size of the L1 page table here */]; // Statically allocated page table
+  uint32	pagetable[MEM_L1TABLE_SIZE]; // Statically allocated page table
   int		npages;		// Number of pages allocated to this process
   Link		*l;		// Used for keeping PCB in queues
 } PCB;
