@@ -3,4 +3,5 @@ q1:
 	mainframer.sh 'cd os && make'
 	mainframer.sh 'cd apps/example && make clean'
 	mainframer.sh 'cd apps/example && make'
-	mainframer.sh 'cd bin && dlxsim -D m -x os.dlx.obj -a -D m -u makeprocs.dlx.obj'
+# 	mainframer.sh 'cd bin && dlxsim -D m -x os.dlx.obj -a -D m -u makeprocs.dlx.obj 5'
+	mainframer.sh 'cd bin && dlxsim -x os.dlx.obj -a -u makeprocs.dlx.obj 5'

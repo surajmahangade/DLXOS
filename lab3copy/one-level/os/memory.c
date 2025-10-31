@@ -112,9 +112,9 @@ MemoryTranslateUserToSystem (PCB *pcb, uint32 addr)
     int	page = addr / MEM_PAGESIZE;
     int offset = addr % MEM_PAGESIZE;
 
-    if (page > pcb->npages) {
-      return (0);
-    }
+    // if (page > pcb->npages) {
+    //   return (0);
+    // }
     return ((pcb->pagetable[page] & MEM_PTE_ADDR_MASK) + offset);
 }
 
