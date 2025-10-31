@@ -13,3 +13,5 @@ include ../Makerules
 
 include $(APPROOT)/Makerules
 
+run:
+	cd ../../bin; dlxsim -x os.dlx.obj -a -D m -u makeprocs.dlx.obj hello_world.dlx.obj;
