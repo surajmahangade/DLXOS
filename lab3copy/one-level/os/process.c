@@ -524,7 +524,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   //----------------------------------------------------------------------
     /* PTBASE should point to the start of this PCB's pagetable
      For one-level paging the page table is the whole pagetable array */
-  stackframe[PROCESS_STACK_PTBASE] = (uint32)(&pcb->pagetable[0]);
+  stackframe[PROCESS_STACK_PTBASE] = (uint32)(pcb->pagetable);
   stackframe[PROCESS_STACK_PTSIZE] = MEM_L1TABLE_SIZE;
   /* For one-level paging upper and lower 16 bits of PTBITS are the same */
   stackframe[PROCESS_STACK_PTBITS] = (MEM_L1FIELD_FIRST_BITNUM << 16) | MEM_L1FIELD_FIRST_BITNUM;
@@ -563,7 +563,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     //----------------------------------------------------------------------
 
       /* initial user stack pointer = top of virtual address space, 4-byte aligned */
-  stackframe[PROCESS_STACK_USER_STACKPOINTER] = MEM_MAX_VIRTUAL_ADDRESS + 1;
+  stackframe[PROCESS_STACK_USER_STACKPOINTER] = MEM_MAX_VIRTUAL_ADDRESS - 3;
   dbprintf ('m', "Initial user stack pointer = 0x%x\n", stackframe[PROCESS_STACK_USER_STACKPOINTER]);
 
     //--------------------------------------------------------------------
@@ -672,7 +672,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     currentPCB = pcb;
   }
 
-  dbprintf ('p', "Leaving ProcessFork (%s)\n", name);
+  dbprintf ('m', "Leaving ProcessFork (%s)\n", name);
   // Return the process number (found by subtracting the PCB number
   // from the base of the PCB array).
   return (pcb - pcbs);

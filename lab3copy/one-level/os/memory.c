@@ -163,7 +163,8 @@ int MemoryMoveBetweenSpaces (PCB *pcb, unsigned char *system, unsigned char *use
     // MEM_ADDRESS_OFFSET_MASK should be the bit mask required to get just the
     // "offset" portion of an address.
     bytesToCopy = MEM_PAGESIZE - ((uint32)curUser & MEM_ADDRESS_OFFSET_MASK);
-    
+    // print the bytesToCopy for debugging
+    // printf("Debug: bytesToCopy=%c, %d\n", bytesToCopy, bytesToCopy);
     // Now find minimum of bytes in this page vs. total bytes left to copy
     if (bytesToCopy > n) {
       bytesToCopy = n;
@@ -216,6 +217,58 @@ int MemoryCopyUserToSystem (PCB *pcb, unsigned char *from,unsigned char *to, int
 // Feel free to edit.
 //---------------------------------------------------------------------
 int MemoryPageFaultHandler(PCB *pcb) {
+  uint32 fault_address;
+  uint32 user_stack_pointer;
+  uint32 fault_page;
+  uint32 stack_page;
+  int page;
+  
+  // Get the faulting address (with offset zeroed out)
+  fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  fault_page = fault_address >> MEM_L1FIELD_FIRST_BITNUM;
+  
+  // Get user stack pointer and its page
+  user_stack_pointer = pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER];
+  stack_page = user_stack_pointer >> MEM_L1FIELD_FIRST_BITNUM;
+  
+  dbprintf('m', "MemoryPageFaultHandler (%d): fault_addr=0x%x (page %d), stack_ptr=0x%x (page %d)\n",
+           GetCurrentPid(), fault_address, fault_page, user_stack_pointer, stack_page);
+  
+  // Stack grows downward. Check if fault is within valid stack range
+  // Allow fault_page == stack_page - 1 or stack_page - 2 (for function calls)
+  // The -8 bytes (2 words) accounts for return address and frame pointer
+  if (fault_page >= (stack_page - 2) && fault_page <= stack_page) {
+    // This is legitimate stack growth
+    
+    // Check if this page already exists (shouldn't happen, but be safe)
+    if (pcb->pagetable[fault_page] & MEM_PTE_VALID) {
+      dbprintf('m', "MemoryPageFaultHandler (%d): page %d already allocated?\n",
+               GetCurrentPid(), fault_page);
+      return MEM_SUCCESS;
+    }
+    
+    // Allocate a new physical page
+    page = MemoryAllocPage();
+    if (page < 0) {
+      printf("FATAL ERROR: Out of physical memory in MemoryPageFaultHandler for PID %d!\n",
+             GetCurrentPid());
+      ProcessKill();
+      return MEM_FAIL;
+    }
+    
+    // Install the new page in the page table
+    pcb->pagetable[fault_page] = (page << MEM_L1FIELD_FIRST_BITNUM) | MEM_PTE_VALID;
+    pcb->npages++;
+    
+    dbprintf('m', "MemoryPageFaultHandler (%d): allocated physical page %d for virtual page %d\n", 
+             GetCurrentPid(), page, fault_page);
+    return MEM_SUCCESS;
+  }
+  
+  // Not a valid stack access - segmentation fault
+  printf("SEGMENTATION FAULT: Process %d accessed invalid address 0x%x\n", 
+         GetCurrentPid(), fault_address);
+  ProcessKill();
   return MEM_FAIL;
 }
 
