@@ -132,6 +132,9 @@ void ProcessSetStatus (PCB *pcb, int status) {
 //----------------------------------------------------------------------
 void ProcessFreeResources (PCB *pcb) {
   int i = 0;
+  uint32 physAddr;
+  uint32 page;
+  uint32 sysStackPage;
 
   // Allocate a new link for this pcb on the freepcbs queue
   if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
@@ -152,15 +155,15 @@ void ProcessFreeResources (PCB *pcb) {
 
   for (i = 0; i < MEM_L1TABLE_SIZE; i++) {
     if (pcb->pagetable[i] & MEM_PTE_VALID) {
-      uint32 physAddr = pcb->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
-      uint32 page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
+      physAddr = pcb->pagetable[i] & MEM_PTE_ADDR_MASK;
+      page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
       MemoryFreePage(page);
       pcb->pagetable[i] = 0;
     }
   }
   
   if (pcb->sysStackArea != 0) {
-    uint32 sysStackPage = (pcb->sysStackArea - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
+    sysStackPage = (pcb->sysStackArea - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
     MemoryFreePage(sysStackPage);
     pcb->sysStackArea = 0;
   }
@@ -171,8 +174,6 @@ void ProcessFreeResources (PCB *pcb) {
   pcb->heap_root = NULL;
   
   pcb->npages = 0;
-
-
 
   ProcessSetStatus (pcb, PROCESS_STATUS_FREE);
 }
@@ -402,16 +403,16 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   PCB *pcb;                // Holds pcb while we build it for this process.
   int intrs;               // Stores previous interrupt settings.
   uint32  initial_user_params[MAX_ARGS+2]; // Initial memory for user parameters (argc, argv)
-                                           // initial_user_params[0] = argc
-                                           // initial_user_params[1] = argv, points to initial_user_params[2]
-                                           // initial_user_params[2] = address of string for argv[0]
-                                           // initial_user_params[3] = address of string for argv[1]
-                                           //                           ...
   uint32 argc=0;           // running counter for number of arguments
-  uint32 offset;           // Used in parsing command line argument strings, holds offset (in bytes) from 
-                           // beginning of the string to the current argument.
+  uint32 offset;           // Used in parsing command line argument strings
   uint32 initial_user_params_bytes;  // total number of bytes in initial user parameters array
-
+  
+  int sysStackPage;
+  int page;
+  int heapPage;
+  int heapVPage;
+  int userStackPage;
+  int userStackIndex;
 
   intrs = DisableIntrs ();
   dbprintf ('I', "Old interrupt value was 0x%x.\n", intrs);
@@ -451,7 +452,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // equal to the last 4-byte-aligned address in physical page
   // for the system stack.
   //---------------------------------------------------------
-  int sysStackPage = MemoryAllocPage();
+  sysStackPage = MemoryAllocPage();
   if (sysStackPage < 0) {
     printf("FATAL ERROR: could not allocate system stack page in ProcessFork!\n");
     exitsim();
@@ -463,7 +464,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
 
   // Allocate 4 pages for code/data at virtual addresses 0-3
   for (i = 0; i < 4; i++) {
-    int page = MemoryAllocPage();
+    page = MemoryAllocPage();
     if (page < 0) {
       printf("FATAL ERROR: could not allocate code/data pages in ProcessFork!\n");
       exitsim();
@@ -474,12 +475,12 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   }
 
   // Allocate 1 initial page for heap at virtual page 4 (Q4 requirement)
-  int heapPage = MemoryAllocPage();
+  heapPage = MemoryAllocPage();
   if (heapPage < 0) {
     printf("FATAL ERROR: could not allocate initial heap page in ProcessFork!\n");
     exitsim();
   }
-  int heapVPage = 4;  // Heap starts at virtual page 4
+  heapVPage = 4;  // Heap starts at virtual page 4
   pcb->pagetable[heapVPage] = MemorySetupPte(heapPage);
 
   dbprintf('m', "ProcessFork (%s): allocated heap page %d at virtual page %d\n",
@@ -492,13 +493,13 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   pcb->heap_root = NULL;  // Buddy tree will be initialized on first malloc()
 
   // Allocate 1 page for user stack at TOP of virtual address space
-  int userStackPage = MemoryAllocPage();
+  userStackPage = MemoryAllocPage();
   if (userStackPage < 0) {
     printf("FATAL ERROR: could not allocate user stack page in ProcessFork!\n");
     exitsim();
   }
   // User stack is at the last page of virtual address space
-  int userStackIndex = MEM_L1TABLE_SIZE - 1;
+  userStackIndex = MEM_L1TABLE_SIZE - 1;
   pcb->pagetable[userStackIndex] = MemorySetupPte(userStackPage);
   dbprintf('m', "ProcessFork (%s): allocated user stack page %d at virtual page %d\n",
           name, userStackPage, userStackIndex);
@@ -511,6 +512,43 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // Must be 4-byte aligned
   stackframe = (uint32 *)(pcb->sysStackArea + MEM_PAGESIZE - 4);
   dbprintf('m', "ProcessFork (%s): system stack bottom at 0x%x\n", name, (int)stackframe);
+
+  // Now that the stack frame points at the bottom of the system stack memory area, we need to
+  // move it up (decrement it) by one stack frame size because we're about to fill in the
+  // initial stack frame that will be loaded for this PCB when it gets switched in by 
+  // ProcessSchedule the first time.
+  stackframe -= PROCESS_STACK_FRAME_SIZE;
+
+  // The system stack pointer is set to the base of the current interrupt stack frame.
+  pcb->sysStackPtr = stackframe;
+  // The current stack frame pointer is set to the same thing.
+  pcb->currentSavedFrame = stackframe;
+
+  //----------------------------------------------------------------------
+  // This section sets up the stack frame for the process.  This is done
+  // so that the frame looks to the interrupt handler like the process
+  // was "suspended" right before it began execution.  The standard
+  // mechanism of swapping in the registers and returning to the place
+  // where it was "interrupted" will then work.
+  //----------------------------------------------------------------------
+
+  // The previous stack frame pointer is set to 0, meaning there is no
+  // previous frame.
+  dbprintf('m', "ProcessFork: stackframe = 0x%x\n", (int)stackframe);
+  stackframe[PROCESS_STACK_PREV_FRAME] = 0;
+
+  //----------------------------------------------------------------------
+  // STUDENT: setup the PTBASE, PTBITS, and PTSIZE here on the current
+  // stack frame.
+  //----------------------------------------------------------------------
+  stackframe[PROCESS_STACK_PTBASE] = (uint32)(pcb->pagetable);
+  stackframe[PROCESS_STACK_PTSIZE] = MEM_L1TABLE_SIZE;
+  // For one-level paging, upper and lower 16 bits must be the same
+  stackframe[PROCESS_STACK_PTBITS] = (MEM_L1FIELD_FIRST_BITNUM << 16) | MEM_L1FIELD_FIRST_BITNUM;
+  
+  dbprintf('m', "ProcessFork (%s): PTBASE=0x%x, PTSIZE=%d, PTBITS=0x%x\n",
+           name, stackframe[PROCESS_STACK_PTBASE], stackframe[PROCESS_STACK_PTSIZE],
+           stackframe[PROCESS_STACK_PTBITS]);
 
   // Move stackframe up by one frame size
   stackframe -= PROCESS_STACK_FRAME_SIZE;
