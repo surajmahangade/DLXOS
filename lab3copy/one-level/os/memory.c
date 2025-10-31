@@ -115,7 +115,7 @@ MemoryTranslateUserToSystem (PCB *pcb, uint32 addr)
     if (page > pcb->npages) {
       return (0);
     }
-    return ((pcb->pagetable[page] & MEM_PAGE_OFFSET_MASK) + offset);
+    return ((pcb->pagetable[page] & MEM_PTE_ADDR_MASK) + offset);
 }
 
 
