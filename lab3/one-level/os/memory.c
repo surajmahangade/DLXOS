@@ -83,6 +83,12 @@ void MemoryModuleInit() {
   for (i = 0; i < (MEM_MAX_PAGES / 32 + 1); i++) {
     freemap[i] = 0;
   }
+  // Set bits for pages used by OS as "in use"
+  os_pages = (pagestart) / MEM_PAGESIZE;
+  for (i = 0; i < os_pages; i++) {
+    freemap[i / 32] |= (1 << (i % 32));
+    nfreepages--;
+  }
   
   dbprintf('m', "MemoryModuleInit: initialized with %d free pages\n", nfreepages);
 }
