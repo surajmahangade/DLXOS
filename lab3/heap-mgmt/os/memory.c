@@ -13,7 +13,7 @@
 
 // num_pages = size_of_memory / size_of_one_page
 static uint32 freemap[MEM_MAX_PAGES]; // Bitmap for free pages
-static uint32 pagestart;
+uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
 
