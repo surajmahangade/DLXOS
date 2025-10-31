@@ -127,7 +127,8 @@ void ProcessSetStatus (PCB *pcb, int status) {
 //----------------------------------------------------------------------
 void ProcessFreeResources (PCB *pcb) {
   int i = 0;
-
+  uint32 page;
+  uint32 physAddr;
   // Allocate a new link for this pcb on the freepcbs queue
   if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
     printf("FATAL ERROR: could not get Queue Link in ProcessFreeResources!\n");
@@ -148,8 +149,8 @@ void ProcessFreeResources (PCB *pcb) {
   // Free all pages in the page table (with reference counting)
   for (i = 0; i < MEM_L1TABLE_SIZE; i++) {
     if (pcb->pagetable[i] & MEM_PTE_VALID) {
-      uint32 physAddr = pcb->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
-      uint32 page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
+      physAddr = pcb->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
+      page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
       MemoryDecreaseRefcount(page);  // Use refcount-aware free
       pcb->pagetable[i] = 0;
     }
@@ -381,6 +382,7 @@ int ProcessRealFork(PCB *parent) {
   unsigned char *child_stack;
   uint32 offset;
   int intrs;
+  int sysStackPage;
   
   dbprintf('m', "ProcessRealFork (%d): forking process\n", GetPidFromAddress(parent));
   
@@ -431,7 +433,7 @@ int ProcessRealFork(PCB *parent) {
   }
   
   // Allocate new system stack for child and copy parent's system stack
-  int sysStackPage = MemoryAllocPage();
+  sysStackPage = MemoryAllocPage();
   if (sysStackPage < 0) {
     printf("FATAL ERROR: could not allocate system stack for child in ProcessRealFork!\n");
     ProcessFreeResources(child);
@@ -530,7 +532,9 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   uint32 offset;           // Used in parsing command line argument strings, holds offset (in bytes) from 
                            // beginning of the string to the current argument.
   uint32 initial_user_params_bytes;  // total number of bytes in initial user parameters array
-
+  int sysStackPage;        // Physical page number for system stack
+  int userStackIndex;
+  int userStackPage;
 
   intrs = DisableIntrs ();
   dbprintf ('I', "Old interrupt value was 0x%x.\n", intrs);
@@ -570,7 +574,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // equal to the last 4-byte-aligned address in physical page
   // for the system stack.
   //---------------------------------------------------------
-  int sysStackPage = MemoryAllocPage();
+  sysStackPage = MemoryAllocPage();
   if (sysStackPage < 0) {
     printf("FATAL ERROR: could not allocate system stack page in ProcessFork!\n");
     exitsim();
@@ -593,13 +597,13 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   }
   
   // Allocate 1 page for user stack at TOP of virtual address space
-  int userStackPage = MemoryAllocPage();
+  userStackPage = MemoryAllocPage();
   if (userStackPage < 0) {
     printf("FATAL ERROR: could not allocate user stack page in ProcessFork!\n");
     exitsim();
   }
   // User stack is at the last page of virtual address space
-  int userStackIndex = MEM_L1TABLE_SIZE - 1;
+  userStackIndex = MEM_L1TABLE_SIZE - 1;
   pcb->pagetable[userStackIndex] = MemorySetupPte(userStackPage);
   dbprintf('m', "ProcessFork (%s): allocated user stack page %d at virtual page %d\n",
            name, userStackPage, userStackIndex);

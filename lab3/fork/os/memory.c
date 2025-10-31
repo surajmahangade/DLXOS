@@ -13,7 +13,7 @@
 
 // num_pages = size_of_memory / size_of_one_page
 static uint32 freemap[MEM_MAX_PAGES / 32 + 1];
-static uint32 pagestart;
+uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
 
@@ -509,4 +509,12 @@ int MemoryROPAccessHandler(PCB *pcb) {
   }
   
   return MEM_SUCCESS;
+}
+
+// empty malloc and mfree implementations
+void *malloc(PCB *pcb, int size) {
+    return NULL;
+}
+int mfree(PCB *pcb, void *ptr) {
+    return -1;
 }
