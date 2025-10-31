@@ -12,8 +12,7 @@
 #include "queue.h"
 
 // num_pages = size_of_memory / size_of_one_page
-static uint32 freemap[MEM_MAX_PAGES]; // Bitmap for free pages
-static uint32 pagestart;
+static uint32 freemap[MEM_MAX_PAGES/32]; // Bitmap for free pages
 static int nfreepages;
 static int freemapmax;
 
@@ -45,6 +44,15 @@ int MemoryGetSize() {
   return (*((int *)DLX_MEMSIZE_ADDRESS));
 }
 
+inline void MemorySetFreemap (int p, int b)
+{
+  uint32	wd = p / 32;
+  uint32	bitnum = p % 32;
+
+  freemap[wd] = (freemap[wd] & invert(1 << bitnum)) | (b << bitnum);
+  dbprintf ('m', "Set freemap entry %d to 0x%x.\n",
+	    wd, freemap[wd]);
+}
 
 //----------------------------------------------------------------------
 //
@@ -61,27 +69,45 @@ void MemoryModuleInit() {
   int memsize = MemoryGetSize();
   int os_pages;
   int total_pages;
+  // int all_pages = memsize / MEM_PAGESIZE;
+  int		maxpage = MemoryGetSize () / MEM_PAGESIZE;
+  int lastospage = lastosaddress >> MEM_L1FIELD_FIRST_BITNUM;
+  int osoffset = lastosaddress & MEM_PAGE_OFFSET_MASK;
   
   // Calculate where usable memory starts (after OS)
-  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
+  // pagestart = ((uint32)lastosaddress + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
   
+  pagestart = (((uint32)lastosaddress + MEM_PAGESIZE - 1) >> MEM_L1FIELD_FIRST_BITNUM);
+
+
   // Calculate total available pages in the system
-  total_pages = (memsize - pagestart) / MEM_PAGESIZE;
+  total_pages = (memsize) / MEM_PAGESIZE;
   
   // Can't have more pages than our maximum
-  if (total_pages > MEM_MAX_PAGES) {
-    total_pages = MEM_MAX_PAGES;
-  }
+  // if (total_pages > MEM_MAX_PAGES) {
+  //   total_pages = MEM_MAX_PAGES;
+  // }
   
   nfreepages = total_pages;
-  freemapmax = total_pages;
+  // freemapmax = total_pages;
+
+  freemapmax = (maxpage+31) / 32;
+  // MEM_MAX_PAGES
   
-  dbprintf('m', "MemoryModuleInit: memsize=0x%x, pagestart=0x%x, total_pages=%d\n",
-      memsize, pagestart, total_pages);
+  dbprintf('m', "MemoryModuleInit: memsize=0x%x, pagestart=%d, total_pages=%d\n, freemapmax=%d, nfreepages=%d, MEM_MAX_PAGES=%d\n",
+      memsize, pagestart, total_pages, freemapmax, nfreepages, MEM_MAX_PAGES);
+  // print last os address, pagestart, total pages
+  dbprintf('m', "  lastosaddress=0x%x, osoffset=0x%x\n",
+      (uint32)lastosaddress, (uint32)osoffset);
   
   // Initialize freemap - all pages start as free
-  for (i = 0; i < (MEM_MAX_PAGES / 32 + 1); i++) {
+  for (i = 0; i < freemapmax; i++) {
     freemap[i] = 0;
+  }
+  dbprintf('m', "Before %d free pages\n", nfreepages);
+  for (i = 0; i <= pagestart-1; i++) {
+    MemorySetFreemap (i, 1);
+    nfreepages--;
   }
   
   dbprintf('m', "MemoryModuleInit: initialized with %d free pages\n", nfreepages);
@@ -180,6 +206,8 @@ int MemoryMoveBetweenSpaces (PCB *pcb, unsigned char *system, unsigned char *use
     if (bytesToCopy > n) {
       bytesToCopy = n;
     }
+    dbprintf ('m', "MemoryMoveBetweenSpaces: copying %d bytes %s user space (user vaddr 0x%x, system addr 0x%x)\n",
+        bytesToCopy, (dir >= 0) ? "to" : "from", (uint32)user, (uint32)curUser);
 
     // Perform the copy.
     if (dir >= 0) {
@@ -194,6 +222,7 @@ int MemoryMoveBetweenSpaces (PCB *pcb, unsigned char *system, unsigned char *use
     system += bytesToCopy;      // Current address in system space to copy next bytes from/into
     user += bytesToCopy;        // Current virtual address in user space to copy next bytes from/into
   }
+  dbprintf ('m', "MemoryMoveBetweenSpaces: total bytes copied = %d\n", bytesCopied);
   return (bytesCopied);
 }
 
@@ -293,7 +322,7 @@ int MemoryAllocPage(void) {
   int i, j;
   uint32 mask;
   
-  for (i = 0; i < (freemapmax / 32 + 1); i++) {
+  for (i = 0; i < (freemapmax); i++) {
     if (freemap[i] != 0xFFFFFFFF) {
       // Found a word with at least one free page
       for (j = 0; j < 32; j++) {
@@ -301,7 +330,7 @@ int MemoryAllocPage(void) {
         if ((freemap[i] & mask) == 0) {
           // Found a free page
           int page = i * 32 + j;
-          if (page >= freemapmax) {
+          if (page >= MEM_MAX_PAGES) {
             return -1;
           }
           
@@ -310,7 +339,7 @@ int MemoryAllocPage(void) {
           nfreepages--;
           
           dbprintf('m', "MemoryAllocPage: allocated page %d (phys addr 0x%x), %d pages remaining\n",
-                   page, pagestart + (page << MEM_L1FIELD_FIRST_BITNUM), nfreepages);
+                   page, (page << MEM_L1FIELD_FIRST_BITNUM), nfreepages);
           return page;
         }
       }
@@ -322,24 +351,25 @@ int MemoryAllocPage(void) {
 }
 
 uint32 MemorySetupPte(uint32 page) {
-  uint32 pte;
-  uint32 physAddr;
+  // uint32 pte;
+  // uint32 physAddr;
   
-  if (page >= freemapmax) {
-    dbprintf('m', "MemorySetupPte: invalid page %d\n", page);
-    return 0;
-  }
+  // if (page >= MEM_MAX_PAGES) {
+  //   dbprintf('m', "MemorySetupPte: invalid page %d\n", page);
+  //   return 0;
+  // }
   
-  // Calculate physical address
-  physAddr = pagestart + (page << MEM_L1FIELD_FIRST_BITNUM);
+  // // Calculate physical address
+  // physAddr = pagestart + (page << MEM_L1FIELD_FIRST_BITNUM);
   
-  // Create PTE with valid bit set
-  pte = physAddr | MEM_PTE_VALID;
+  // // Create PTE with valid bit set
+  // pte = physAddr | MEM_PTE_VALID;
   
-  dbprintf('m', "MemorySetupPte: page %d -> PTE 0x%x (phys addr 0x%x)\n",
-           page, pte, physAddr);
+  // dbprintf('m', "MemorySetupPte: page %d -> PTE 0x%x (phys addr 0x%x)\n",
+  //          page, pte, physAddr);
   
-  return pte;
+  // return pte;
+  return ((page * MEM_PAGESIZE) | MEM_PTE_VALID);
 }
 
 
@@ -347,7 +377,7 @@ void MemoryFreePage(uint32 page) {
   int word, bit;
   uint32 mask;
   
-  if (page >= freemapmax) {
+  if (page >= MEM_MAX_PAGES) {
     dbprintf('m', "MemoryFreePage: invalid page %d\n", page);
     return;
   }
@@ -371,5 +401,5 @@ void MemoryFreePage(uint32 page) {
 }
 
 // code for question 3
-// void *malloc(PCB *pcb, int size) {}
-// int mfree(PCB *pcb, void *ptr) {}
+void *malloc(PCB *pcb, int size) {}
+int mfree(PCB *pcb, void *ptr) {}

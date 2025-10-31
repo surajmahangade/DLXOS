@@ -36,7 +36,7 @@
 #define MEM_PTE_VALID    0x1
 
 // Page size = 2^12 = 4096 bytes
-#define MEM_PAGESIZE (1 << MEM_L1FIELD_FIRST_BITNUM)
+#define MEM_PAGESIZE (0x1 << MEM_L1FIELD_FIRST_BITNUM)
 
 // Number of entries in L1 page table
 // (4MB) / (4KB) = 1024 entries
