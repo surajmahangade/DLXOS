@@ -13,9 +13,9 @@
 
 // num_pages = size_of_memory / size_of_one_page
 static uint32 freemap[MEM_MAX_PAGES]; // Bitmap for free pages
-static uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
+uint32 pagestart;
 
 
 //----------------------------------------------------------------------
@@ -63,7 +63,7 @@ void MemoryModuleInit() {
   int total_pages;
   
   // Calculate where usable memory starts (after OS)
-  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
+  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & ~MEM_ADDRESS_OFFSET_MASK;
   
   // Calculate total available pages in the system
   total_pages = (memsize - pagestart) / MEM_PAGESIZE;
@@ -83,6 +83,15 @@ void MemoryModuleInit() {
   for (i = 0; i < (MEM_MAX_PAGES / 32 + 1); i++) {
     freemap[i] = 0;
   }
+
+  // Mark pages used by OS as allocated
+  // os_pages = (pagestart) / MEM_PAGESIZE;
+  // for (i = 0; i < os_pages; i++) {
+  //   int word = i / 32;
+  //   int bit = i % 32;
+  //   freemap[word] |= (1 << bit);
+  //   nfreepages--;
+  // }
   
   dbprintf('m', "MemoryModuleInit: initialized with %d free pages\n", nfreepages);
 }
@@ -121,10 +130,10 @@ uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
   }
 
   // Extract offset from virtual address
-  offset = addr & MEM_PAGE_OFFSET_MASK;
+  offset = addr & MEM_ADDRESS_OFFSET_MASK;
   
   // Construct the physical address: (physical page address) | offset
-  physaddr = (pte & MEM_ADDRESS_OFFSET_MASK) | offset;
+  physaddr = (pte & MEM_PTE_ADDR_MASK) | offset;
 
   dbprintf('m', "MemoryTranslateUserToSystem: vaddr 0x%x -> paddr 0x%x\n", addr, physaddr);
   return physaddr;
@@ -175,7 +184,6 @@ int MemoryMoveBetweenSpaces (PCB *pcb, unsigned char *system, unsigned char *use
     // MEM_ADDRESS_OFFSET_MASK should be the bit mask required to get just the
     // "offset" portion of an address.
     bytesToCopy = MEM_PAGESIZE - ((uint32)curUser & MEM_ADDRESS_OFFSET_MASK);
-    
     // Now find minimum of bytes in this page vs. total bytes left to copy
     if (bytesToCopy > n) {
       bytesToCopy = n;
@@ -371,5 +379,5 @@ void MemoryFreePage(uint32 page) {
 }
 
 // code for question 3
-// void *malloc(PCB *pcb, int size) {}
-// int mfree(PCB *pcb, void *ptr) {}
+void *malloc(PCB *pcb, int size) {}
+int mfree(PCB *pcb, void *ptr) {}

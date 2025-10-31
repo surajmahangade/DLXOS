@@ -63,7 +63,7 @@ void MemoryModuleInit() {
   int total_pages;
   
   // Calculate where usable memory starts (after OS)
-  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
+  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & ~MEM_ADDRESS_OFFSET_MASK;
   
   // Calculate total available pages in the system
   total_pages = (memsize - pagestart) / MEM_PAGESIZE;
@@ -121,10 +121,10 @@ uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
   }
 
   // Extract offset from virtual address
-  offset = addr & MEM_PAGE_OFFSET_MASK;
+  offset = addr & MEM_ADDRESS_OFFSET_MASK;
   
   // Construct the physical address: (physical page address) | offset
-  physaddr = (pte & MEM_ADDRESS_OFFSET_MASK) | offset;
+  physaddr = (pte & MEM_PTE_ADDR_MASK) | offset;
 
   dbprintf('m', "MemoryTranslateUserToSystem: vaddr 0x%x -> paddr 0x%x\n", addr, physaddr);
   return physaddr;

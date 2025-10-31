@@ -401,6 +401,9 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   uint32 offset;           // Used in parsing command line argument strings, holds offset (in bytes) from 
                            // beginning of the string to the current argument.
   uint32 initial_user_params_bytes;  // total number of bytes in initial user parameters array
+  int sysStackPage;        // Physical page number for system stack
+  int userStackPage;
+  int userStackIndex;
 
 
   intrs = DisableIntrs ();
@@ -441,7 +444,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // equal to the last 4-byte-aligned address in physical page
   // for the system stack.
   //---------------------------------------------------------
-  int sysStackPage = MemoryAllocPage();
+  sysStackPage = MemoryAllocPage();
   if (sysStackPage < 0) {
     printf("FATAL ERROR: could not allocate system stack page in ProcessFork!\n");
     exitsim();
@@ -461,16 +464,18 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     pcb->pagetable[i] = MemorySetupPte(page);
     dbprintf('m', "ProcessFork (%s): allocated code/data page %d at virtual page %d\n",
              name, page, i);
+  /* Print the pagetable entry for debugging */
+  printf("Debug: pcb=%p pagetable[%d]=0x%x\n", (void *)pcb, i, pcb->pagetable[i]);
   }
   
   // Allocate 1 page for user stack at TOP of virtual address space
-  int userStackPage = MemoryAllocPage();
+  userStackPage = MemoryAllocPage();
   if (userStackPage < 0) {
     printf("FATAL ERROR: could not allocate user stack page in ProcessFork!\n");
     exitsim();
   }
   // User stack is at the last page of virtual address space
-  int userStackIndex = MEM_L1TABLE_SIZE - 1;
+  userStackIndex = MEM_L1TABLE_SIZE - 1;
   pcb->pagetable[userStackIndex] = MemorySetupPte(userStackPage);
   dbprintf('m', "ProcessFork (%s): allocated user stack page %d at virtual page %d\n",
            name, userStackPage, userStackIndex);
@@ -552,8 +557,10 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     // of the process's virtual address space (4-byte aligned).
     //----------------------------------------------------------------------
 
-    // setting the stack pointer to the top of user stack area
-    stackframe[PROCESS_STACK_USER_STACKPOINTER] = MEM_MAX_VIRTUAL_ADDRESS + 1;
+  // setting the stack pointer to the top of user stack area
+  // MEM_MAX_VIRTUAL_ADDRESS + 1 is out of range (one past last byte).
+  // Use the last byte of the last virtual page, 4-byte aligned.
+    stackframe[PROCESS_STACK_USER_STACKPOINTER] = MEM_MAX_VIRTUAL_ADDRESS - 3;
     dbprintf ('p', "Initial user stack pointer = 0x%x\n", stackframe[PROCESS_STACK_USER_STACKPOINTER]);
 
 
@@ -661,6 +668,8 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     dbprintf ('p', "Setting currentPCB=0x%x, stackframe=0x%x\n",
 	      (int)pcb, (int)(pcb->currentSavedFrame));
     currentPCB = pcb;
+    /* Also print using printf so it always appears */
+    printf("Debug: currentPCB set to %p\n", (void *)currentPCB);
   }
 
   dbprintf ('p', "Leaving ProcessFork (%s)\n", name);

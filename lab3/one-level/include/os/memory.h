@@ -5,6 +5,7 @@
 #include "memory_constants.h"
 
 extern int lastosaddress; // Defined in an assembly file
+extern uint32 pagestart;  // Defined in memory.c
 
 //--------------------------------------------------------
 // Existing function prototypes:
@@ -26,7 +27,7 @@ int MemoryAllocPage(void);
 uint32 MemorySetupPte (uint32 page);
 void MemoryFreePage(uint32 page);
 //for question 3
-// void *malloc(PCB *pcb, int size);
-// int mfree(PCB *pcb, void *ptr);
+void *malloc(PCB *pcb, int size);
+int mfree(PCB *pcb, void *ptr);
 
 #endif	// _memory_h_
