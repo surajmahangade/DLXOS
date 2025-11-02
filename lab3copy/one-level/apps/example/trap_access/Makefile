@@ -6,8 +6,8 @@
 # this way because the build procedure for all apps is basically the same.
 
 
-SRCS=hello_world.c
-EXEC=hello_world.dlx.obj
+SRCS=trap_access.c
+EXEC=trap_access.dlx.obj
 
 include ../Makerules
 

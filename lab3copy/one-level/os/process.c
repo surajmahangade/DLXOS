@@ -147,8 +147,9 @@ void ProcessFreeResources (PCB *pcb) {
     int p;
     for (p = 0; p < MEM_L1TABLE_SIZE; p++) {
       if (pcb->pagetable[p] & MEM_PTE_VALID) {
-        uint32 physAddr = pcb->pagetable[p] & MEM_ADDRESS_OFFSET_MASK;
+        uint32 physAddr = pcb->pagetable[p];
         uint32 page = physAddr >> MEM_L1FIELD_FIRST_BITNUM;
+        dbprintf ('m',"Freeing page %x from process %s, id=%d\n", page, pcb->name, (int)(pcb - pcbs));
         MemoryFreePage(page);
         pcb->pagetable[p] = 0;
       }

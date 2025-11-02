@@ -108,9 +108,15 @@ MemoryModuleInit ()
 //----------------------------------------------------------------------
 uint32
 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr)
-{
+{ 
+    // If address is greater than the maximum user address, call TRAP_ACCESS
+    // if (addr >= MEM_MAX_VIRTUAL_ADDRESS) {
+    //   return (0);
+    // }
+    // translating address
     int	page = addr / MEM_PAGESIZE;
     int offset = addr % MEM_PAGESIZE;
+    dbprintf('m', "MemoryTranslateUserToSystem: translating vaddr 0x%x\n", addr);
 
     // if (page > pcb->npages) {
     //   return (0);
@@ -249,7 +255,7 @@ int MemoryPageFaultHandler(PCB *pcb) {
     
     // Allocate a new physical page
     page = MemoryAllocPage();
-    if (page < 0) {
+    if (page <= 0) {
       printf("FATAL ERROR: Out of physical memory in MemoryPageFaultHandler for PID %d!\n",
              GetCurrentPid());
       ProcessKill();
@@ -260,8 +266,8 @@ int MemoryPageFaultHandler(PCB *pcb) {
     pcb->pagetable[fault_page] = (page << MEM_L1FIELD_FIRST_BITNUM) | MEM_PTE_VALID;
     pcb->npages++;
     
-    dbprintf('m', "MemoryPageFaultHandler (%d): allocated physical page %d for virtual page %d\n", 
-             GetCurrentPid(), page, fault_page);
+    dbprintf('m', "MemoryPageFaultHandler (%d): allocated physical page %d for virtual page %d, remaining pages %d\n",
+             GetCurrentPid(), page, fault_page, nfreepages);
     return MEM_SUCCESS;
   }
   
@@ -314,7 +320,7 @@ uint32 MemorySetupPte (uint32 page) {
 void MemoryFreePage(uint32 page) {
   MemorySetFreemap (page, 1);
   nfreepages += 1;
-  dbprintf ('m',"Freed page 0x%x, %d remaining.\n", page, nfreepages);
+  dbprintf ('m',"Freed page %d, %d remaining.\n", page, nfreepages);
 }
 
 void *malloc(PCB *pcb, int size) {}
