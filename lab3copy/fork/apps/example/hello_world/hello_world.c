@@ -19,6 +19,7 @@ void main (int argc, char *argv[])
   int *p;
   int x;
   int result;
+  int pid;
   if (argc != 2) { 
     Printf("Usage: %s <handle_to_procs_completed_semaphore>\n"); 
     Exit();
@@ -36,8 +37,12 @@ void main (int argc, char *argv[])
   // // print x
   // Printf("hello_world (%d): read value %d from address %d\n", getpid(), x, p);
   // make the stack to grow larger than 1 page.
-  result = recursive_function(1000);
-  Printf("hello_world (%d): recursive_function result %d\n", getpid(), result);
+  pid = fork();
+  Printf("hello_world (%d): fork returned %d\n", getpid(), pid);
+  pid = fork();
+  Printf("hello_world (%d): fork returned %d\n", getpid(), pid);
+  result = recursive_function(100);
+  // Printf("hello_world (%d): recursive_function result %d\n", getpid(), result);
   // Signal the semaphore to tell the original process that we're done
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("hello_world (%d): Bad semaphore s_procs_completed (%d)!\n", getpid(), s_procs_completed);

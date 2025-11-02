@@ -5,7 +5,7 @@
 #include "memory_constants.h"
 
 extern int lastosaddress; // Defined in an assembly file
-
+extern int page_ref_count[MEM_MAX_PAGES];
 //--------------------------------------------------------
 // Existing function prototypes:
 //--------------------------------------------------------
@@ -17,7 +17,7 @@ int MemoryMoveBetweenSpaces (PCB *pcb, unsigned char *system, unsigned char *use
 int MemoryCopySystemToUser (PCB *pcb, unsigned char *from, unsigned char *to, int n);
 int MemoryCopyUserToSystem (PCB *pcb, unsigned char *from, unsigned char *to, int n);
 int MemoryPageFaultHandler(PCB *pcb);
-
+void ReadOnlyPageFaultHandler(PCB *pcb);
 //---------------------------------------------------------
 // Put your function prototypes here
 //---------------------------------------------------------

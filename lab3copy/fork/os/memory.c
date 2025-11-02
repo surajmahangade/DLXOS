@@ -17,6 +17,8 @@ static uint32 freemap[FREEMAP_SIZE]; // Bitmap for free pages
 static uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
+int page_ref_count[MEM_MAX_PAGES] = {0};
+
 
 //----------------------------------------------------------------------
 //
@@ -88,6 +90,14 @@ MemoryModuleInit ()
     // Initially, all pages are considered in use.  This is done to make
     // sure we don't have any partially initialized freemap entries.
     freemap[i] = 0;
+  }
+  // initialize page_ref_count to 0
+  for (i = 0; i < MEM_MAX_PAGES; i++) {
+    page_ref_count[i] = 0;
+  }
+  // set os pages count to 1
+  for (curpage = 0; curpage < pagestart; curpage++) {
+    page_ref_count[curpage] = 1;
   }
   nfreepages = 0;
   for (curpage = pagestart; curpage < maxpage; curpage++) {
@@ -308,6 +318,15 @@ int MemoryAllocPage (void)
   dbprintf ('m', "Allocated memory, from map %d, page %d, map=0x%x.\n",
 	    mapnum, v, freemap[mapnum]);
   nfreepages -= 1;
+  
+  if (page_ref_count[v] > 0) {
+    printf("FATAL ERROR: Allocated page %d with non-zero reference count %d!\n",
+           v, page_ref_count[v]);
+    exitsim();
+  }
+  page_ref_count[v] = 1; // initialize reference count
+  // print allocated physical page number
+  dbprintf ('a',"Allocated physical page %d, ref_count=%d\n", v, page_ref_count[v]);
   return (v);
 }
 
@@ -318,10 +337,79 @@ uint32 MemorySetupPte (uint32 page) {
 
 
 void MemoryFreePage(uint32 page) {
+  page_ref_count[page]--;
+  if (page_ref_count[page] != 0) {
+    dbprintf ('a',"Decremented ref count for page %d to %d, not freeing.\n", page, page_ref_count[page]);
+    return;
+  }
   MemorySetFreemap (page, 1);
   nfreepages += 1;
-  dbprintf ('m',"Freed page %d, %d remaining.\n", page, nfreepages);
+  dbprintf ('a',"Freed page %d, %d remaining.\n", page, nfreepages);
 }
+
+void ReadOnlyPageFaultHandler(PCB *pcb) {
+  uint32 fault_address;
+  uint32 fault_page;
+  uint32 phy_fault_addr;
+  uint32 phy_fault_page;
+  uint32 new_phys_addr;
+  int page;
+  
+  // Get the faulting address (with offset zeroed out)
+  fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  fault_page = fault_address >> MEM_L1FIELD_FIRST_BITNUM;
+  
+  dbprintf('m', "ReadOnlyPageFaultHandler (%d): fault_addr=0x%x (page %d)\n",
+           GetCurrentPid(), fault_address, fault_page);
+  
+  // Check if the page is valid
+  if (!(pcb->pagetable[fault_page] & MEM_PTE_VALID)) {
+    printf("FATAL ERROR: ReadOnlyPageFaultHandler called for invalid page %d in PID %d!\n",
+           fault_page, GetCurrentPid());
+    ProcessKill();
+    return;
+  }
+  phy_fault_addr = pcb->pagetable[fault_page] & MEM_PTE_ADDR_MASK;
+  phy_fault_page = phy_fault_addr >> MEM_L1FIELD_FIRST_BITNUM;
+
+  if (page_ref_count[phy_fault_page] == 0) {
+    printf("FATAL ERROR: ReadOnlyPageFaultHandler called for phy_fault_page %d with zero reference count in PID %d!\n",
+           phy_fault_page, GetCurrentPid());
+    ProcessKill();
+    return;
+  }
+
+  if (page_ref_count[phy_fault_page] == 1) {
+    // Page is not shared, just update permissions to read-write
+    pcb->pagetable[fault_page] &= ~MEM_PTE_READONLY;
+    dbprintf('a', "ReadOnlyPageFaultHandler (%d): page %d not shared, updated to read-write\n",
+             GetCurrentPid(), phy_fault_page);
+    return;
+  }
+  
+  // Allocate a new physical page
+  page = MemoryAllocPage();
+  if (page <= 0) {
+    printf("FATAL ERROR: Out of physical memory in ReadOnlyPageFaultHandler for PID %d!\n",
+           GetCurrentPid());
+    ProcessKill();
+    return;
+  }
+  
+  // Copy contents from old page to new page
+  // uint32 old_phys_addr = pcb->pagetable[fault_page] & MEM_PTE_ADDR_MASK;
+  new_phys_addr = page * MEM_PAGESIZE;
+  bcopy((unsigned char *)phy_fault_page, (unsigned char *)new_phys_addr, MEM_PAGESIZE);
+  
+  // Update page table to point to new page with read-write permissions
+  pcb->pagetable[fault_page] = (page << MEM_L1FIELD_FIRST_BITNUM) | MEM_PTE_VALID;
+  
+  // Decrement reference count of fault page
+  page_ref_count[phy_fault_page]--;  
+  dbprintf('a', "ReadOnlyPageFaultHandler (%d): copied page %d to new page %d for virtual page %d\n",
+           GetCurrentPid(), phy_fault_page, page, fault_page);
+}
+
 
 void *malloc(PCB *pcb, int size) {}
 int mfree(PCB *pcb, void *ptr) {}

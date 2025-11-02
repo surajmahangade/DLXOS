@@ -95,5 +95,6 @@
 #define	DLX_KBD_INTR		0xfff001c0
 
 #define	TRAP_STACK_SIZE		0x800	// interrupt stack is 2K words
+#define TRAP_ROP_ACCESS 0x8 // Read Only Page Access
 
 #endif	/* _dlxtraps_h_ */
