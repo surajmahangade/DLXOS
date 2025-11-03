@@ -456,7 +456,7 @@ int MemoryPageFaultHandler(PCB *pcb) {
              GetCurrentPid(), page, fault_page, nfreepages);
     // print Allocated a physical page at 0x123 to back up virtual page 0xABC in the heap
     printf("Allocated physical page %d to back up virtual page %d in the heap\n",
-           page, fault_page);
+           page << MEM_L1FIELD_FIRST_BITNUM, fault_page - heap_start_page);
     return MEM_SUCCESS;
   }
   
