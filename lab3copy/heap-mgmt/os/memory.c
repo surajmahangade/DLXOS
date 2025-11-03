@@ -42,7 +42,7 @@ uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
 
     if (n->order == -1) {
       printf("Error: trying to allocate from invalid node idx=%d\n", idx);
-      exitsim();
+      ProcessKill();
     }
     dbprintf('a', "BuddyAlloc: at node idx=%d order=%d addr=%d state=%d\n",
              idx, n->order, n->addr, n->state);
@@ -156,7 +156,7 @@ void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
                 printf("Node idx=%d order=%d addr=%d state=%d\n",
                         i, tree[i].order, tree[i].addr, tree[i].state);
             }
-            exitsim();
+            ProcessKill();
             return;
         }
         n->state = FREE;
@@ -174,7 +174,7 @@ void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
                 printf("Node idx=%d order=%d addr=%d state=%d\n",
                         i, tree[i].order, tree[i].addr, tree[i].state);
             }
-            exitsim();
+            ProcessKill();
             return;
     }
     else {
@@ -545,7 +545,7 @@ void *malloc(PCB *pcb, int size) {
   int needed_order = GetNeededOrder(size);
   int i;
   if (needed_order == -1) {
-    exitsim();
+    ProcessKill();
     return 0;
   }
   dbprintf('a', "malloc: requesting allocation of size %d, needed order %d, max order %d\n",
@@ -553,7 +553,7 @@ void *malloc(PCB *pcb, int size) {
   vaddress = BuddyAlloc(pcb, 0, needed_order);
   if (vaddress == 0){
     printf("Error: malloc failed to allocate %d bytes\n", size);
-    exitsim();
+    ProcessKill();
     return 0;
   }
   return (void *)vaddress;
@@ -589,7 +589,7 @@ if (index == -1) {
   //         dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
   //                  i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
   // }
-    exitsim();
+    ProcessKill();
     return -1;
   }
 
