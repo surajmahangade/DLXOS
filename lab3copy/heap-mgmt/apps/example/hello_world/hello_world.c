@@ -8,8 +8,8 @@ inline int recursive_function(int count) {
   if (count <= 0) {
     return 0;
   } else {
-    return 2 + recursive_function(count - 1);
-  }
+  return 2 + recursive_function(count - 1);
+}
 }
 
 
@@ -25,10 +25,10 @@ void main (int argc, char *argv[])
   void *a, *b, *c, *d, *x1, *x2, *big;
   void *blocks[16];
   int nb = 0;
-  if (argc != 2) { 
+  if (argc != 2) {
     Printf("Usage: %s <handle_to_procs_completed_semaphore>\n"); 
     Exit();
-  } 
+  }
 
   // Convert the command-line strings into integers for use as handles
   s_procs_completed = dstrtol(argv[1], NULL, 10);
@@ -39,7 +39,22 @@ void main (int argc, char *argv[])
   Printf("\n===== HEAP ALLOCATOR TESTS START (pid %d) =====\n", getpid());
 
   // Helper local variables
-  
+    Printf("\n-- Test5: Large allocation (try full page 4096 bytes) --\n");
+  big = malloc(4096); // may succeed if full-page allowed
+  Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
+  if (big) {
+    Printf("hello_world (%d): freeing big allocation %d\n", getpid(), (int)big);
+    mfree(big);
+  }
+
+  // Cleanup: free everything remaining (be conservative)
+  Printf("\n-- Cleanup: freeing remaining allocations --\n");
+  for (i = 0; i < nb; i++) {
+    if (blocks[i]) {
+      Printf("hello_world (%d): freeing blocks[%d] = %d\n", getpid(), i, (int)blocks[i]);
+      mfree(blocks[i]);
+    }
+  }
 
   // Test 1: basic allocations of various sizes (should produce different orders)
   Printf("\n-- Test1: Basic different-size allocations --\n");
@@ -86,22 +101,22 @@ void main (int argc, char *argv[])
   mfree(blocks[6]); mfree(blocks[7]);
 
   // Test 5: large allocation occupying the rest or entire heap
-  Printf("\n-- Test5: Large allocation (try full page 4096 bytes) --\n");
-  big = malloc(4096); // may succeed if full-page allowed
-  Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
-  if (big) {
-    Printf("hello_world (%d): freeing big allocation %d\n", getpid(), (int)big);
-    mfree(big);
-  }
+  // Printf("\n-- Test5: Large allocation (try full page 4096 bytes) --\n");
+  // big = malloc(4096); // may succeed if full-page allowed
+  // Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
+  // if (big) {
+  //   Printf("hello_world (%d): freeing big allocation %d\n", getpid(), (int)big);
+  //   mfree(big);
+  // }
 
-  // Cleanup: free everything remaining (be conservative)
-  Printf("\n-- Cleanup: freeing remaining allocations --\n");
-  for (i = 0; i < nb; i++) {
-    if (blocks[i]) {
-      Printf("hello_world (%d): freeing blocks[%d] = %d\n", getpid(), i, (int)blocks[i]);
-      mfree(blocks[i]);
-    }
-  }
+  // // Cleanup: free everything remaining (be conservative)
+  // Printf("\n-- Cleanup: freeing remaining allocations --\n");
+  // for (i = 0; i < nb; i++) {
+  //   if (blocks[i]) {
+  //     Printf("hello_world (%d): freeing blocks[%d] = %d\n", getpid(), i, (int)blocks[i]);
+  //     mfree(blocks[i]);
+  //   }
+  // }
 
   Printf("===== HEAP ALLOCATOR TESTS END =====\n\n");
   // free
