@@ -23,6 +23,7 @@ void main (int argc, char *argv[])
   int i;
   int size;
   void *a, *b, *c, *d, *x1, *x2, *big;
+  void *m8, *m20, *m64;
   void *blocks[16];
   int nb = 0;
   if (argc != 2) {
@@ -40,12 +41,36 @@ void main (int argc, char *argv[])
 
   // Helper local variables
     Printf("\n-- Test5: Large allocation (try full page 4096 bytes) --\n");
-  big = malloc(4096); // may succeed if full-page allowed
-  Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
-  if (big) {
-    Printf("hello_world (%d): freeing big allocation %d\n", getpid(), (int)big);
-    mfree(big);
-  }
+    big = malloc(4096); // allocate exactly one page
+    Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
+    if (big) {
+      Printf("hello_world (%d): accessing first byte of big allocation -> %d\n", getpid(), (int)big);
+      // touch the page to force page fault if not backed
+      ((char*)big)[0] = 0x5a;
+      mfree(big);
+    }
+
+    m64 = malloc(64*1024); // 64KB (max heap block)
+    Printf("hello_world (%d): malloc(64KB) -> %d\n", getpid(), (int)m64);
+    if (m64) ((char*)m64)[0] = 3;
+    if (m64) { Printf("hello_world (%d): freeing 64KB %d\n", getpid(), (int)m64); mfree(m64); }
+
+    // Test 6: allocate multi-page blocks to exercise dynamic heap growth
+    Printf("\n-- Test6: Multi-page allocations (8KB, 20KB, 64KB) --\n");
+    m8 = malloc(8*1024);   // 8KB
+    Printf("hello_world (%d): malloc(8KB) -> %d\n", getpid(), (int)m8);
+    if (m8) ((char*)m8)[0] = 1; // touch
+
+    m20 = malloc(20*1024); // 20KB
+    Printf("hello_world (%d): malloc(20KB) -> %d\n", getpid(), (int)m20);
+    if (m20) ((char*)m20)[0] = 2;
+
+    
+
+    // Free multi-page allocations
+    if (m8) { Printf("hello_world (%d): freeing 8KB %d\n", getpid(), (int)m8); mfree(m8); }
+    if (m20) { Printf("hello_world (%d): freeing 20KB %d\n", getpid(), (int)m20); mfree(m20); }
+    
 
   // Cleanup: free everything remaining (be conservative)
   Printf("\n-- Cleanup: freeing remaining allocations --\n");
