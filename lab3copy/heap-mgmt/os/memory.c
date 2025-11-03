@@ -47,21 +47,12 @@ uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
     dbprintf('a', "BuddyAlloc: at node idx=%d order=%d addr=%d state=%d\n",
              idx, n->order, n->addr, n->state);
     if (n->order == needed_order) {
-        if (n->state == FREE) {
-            n->state = USED;
-            printf("Allocated block: order=%d addr=%d size=%d\n",
-                    n->order, n->addr, MIN_BLOCK_SIZE << n->order);
-            // for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
-            //     if (!pcb->allocs[i].used) {
-            //         pcb->allocs[i].addr = n->addr;
-            //         pcb->allocs[i].order = needed_order;
-            //         pcb->allocs[i].used = 1;
-            //         pcb->allocs[i].index = idx;
-            //         break;
-            //     }
-            // }
-            return n->addr;
-        }
+    if (n->state == FREE) {
+      n->state = USED;
+      // Allocation success; actual user-visible allocation message
+      // is printed from malloc() so we avoid duplicating it here.
+      return n->addr;
+    }
         // means it is SPLIT hence we don't have a free block here 
         else return 0;
     }
@@ -80,12 +71,12 @@ uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
         pcb->tree[left].state = FREE;
         pcb->tree[right].state = FREE;
 
-        printf("Created left child node (order=%d, addr=%d, size=%d) of parent (order=%d, addr=%d, size=%d)\n",
-                pcb->tree[left].order, pcb->tree[left].addr, half,
-                n->order, n->addr, half*2);
-        printf("Created right child node (order=%d, addr=%d, size=%d) of parent (order=%d, addr=%d, size=%d)\n",
-                pcb->tree[right].order, pcb->tree[right].addr, half,
-                n->order, n->addr, half*2);
+  printf("Created a left child node (order = %d, addr = %d, size = %d) of parent (order = %d, addr = %d, size = %d)\n",
+    pcb->tree[left].order, pcb->tree[left].addr, half,
+    n->order, n->addr, half*2);
+  printf("Created a right child node (order = %d, addr = %d, size = %d) of parent (order = %d, addr = %d, size = %d)\n",
+    pcb->tree[right].order, pcb->tree[right].addr, half,
+    n->order, n->addr, half*2);
     }
 
     addr = BuddyAlloc(pcb, 2*idx + 1, needed_order);
@@ -124,18 +115,17 @@ void merge(BuddyNode *tree, int idx) {
 
     // only coalesce if both children are free
     if (L->state == FREE && R->state == FREE) {
-        P->state = FREE;
-        // set order
-        P->order = L->order + 1;
-        printf("Coalesced buddy nodes (order=%d, addr=%d, size=%d) & "
-               "(order=%d, addr=%d, size=%d)\n",
-               L->order, L->addr, MIN_BLOCK_SIZE << L->order,
-               R->order, R->addr, MIN_BLOCK_SIZE << R->order);
-        printf("into parent node (order=%d, addr=%d, size=%d)\n",
-               P->order, P->addr, MIN_BLOCK_SIZE << P->order);
+   P->state = FREE;
+   // set order
+   P->order = L->order + 1;
+   printf("Coalesced buddy nodes (order = %d, addr = %d, size = %d) & (order = %d, addr = %d, size = %d)\n",
+     L->order, L->addr, MIN_BLOCK_SIZE << L->order,
+     R->order, R->addr, MIN_BLOCK_SIZE << R->order);
+   printf("into the parent node (order = %d, addr = %d, size = %d)\n",
+     P->order, P->addr, MIN_BLOCK_SIZE << P->order);
 
-        // recursively try to merge upward
-        merge(tree, parent);
+   // recursively try to merge upward
+   merge(tree, parent);
     }
 }
 
@@ -147,7 +137,7 @@ void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
 
     // if (addr < n->addr || addr >= n->addr + size) return;
 
-    if (n->state == USED) {
+  if (n->state == USED) {
         if (n->addr != addr) {
             printf("Error: trying to free block at addr=%x but node addr=%x\n",
                     addr, n->addr);
@@ -159,9 +149,9 @@ void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
             ProcessKill();
             return;
         }
-        n->state = FREE;
-        printf("Freed block: order=%d addr=%d size=%d\n",
-                n->order, n->addr, size);
+  n->state = FREE;
+  printf("Freed the block: order = %d, addr = %d, size = %d\n",
+    n->order, n->addr, size);
         merge(tree, idx);
         return;
     }
@@ -555,6 +545,11 @@ void *malloc(PCB *pcb, int size) {
     printf("Error: malloc failed to allocate %d bytes\n", size);
     ProcessKill();
     return 0;
+  }
+  {
+    int block_size = MIN_BLOCK_SIZE << needed_order;
+    printf("Allocated the block: order = %d, addr = %d, requested mem size = %d, block size = %d\n",
+           needed_order, vaddress, size, block_size);
   }
   return (void *)vaddress;
 }
