@@ -43,7 +43,3 @@ kernel/*.map
 *.lst
 */bin
 settings.json
-
-# test folder
-test/*
-bin/
