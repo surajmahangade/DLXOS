@@ -454,6 +454,9 @@ int MemoryPageFaultHandler(PCB *pcb) {
     pcb->npages++;
     dbprintf('m', "MemoryPageFaultHandler (%d): allocated physical page %d for virtual page %d, remaining pages %d\n",
              GetCurrentPid(), page, fault_page, nfreepages);
+    // print Allocated a physical page at 0x123 to back up virtual page 0xABC in the heap
+    printf("Allocated physical page %d to back up virtual page %d in the heap\n",
+           page, fault_page);
     return MEM_SUCCESS;
   }
   
