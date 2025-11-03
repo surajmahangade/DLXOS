@@ -615,5 +615,6 @@ if (index == -1) {
   //                  i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
   //     }
   // }
-  return 0;
+  // return the freed block size
+  return (MIN_BLOCK_SIZE << pcb->tree[index].order);
 }
