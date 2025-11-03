@@ -142,10 +142,10 @@ void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
             printf("Error: trying to free block at addr=%x but node addr=%x\n",
                     addr, n->addr);
             // print entire tree for debugging
-            for (i = 0; i < NODE_COUNT; i++) {
-                printf("Node idx=%d order=%d addr=%d state=%d\n",
-                        i, tree[i].order, tree[i].addr, tree[i].state);
-            }
+            // for (i = 0; i < NODE_COUNT; i++) {
+            //     printf("Node idx=%d order=%d addr=%d state=%d\n",
+            //             i, tree[i].order, tree[i].addr, tree[i].state);
+            // }
             ProcessKill();
             return;
         }
@@ -160,10 +160,10 @@ void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
         printf("Error: trying to free block at addr=%d but node (order=%d, addr=%d) is SPLIT\n",
                 addr, n->order, n->addr);
         // print entire tree for debugging
-            for (i = 0; i < NODE_COUNT; i++) {
-                printf("Node idx=%d order=%d addr=%d state=%d\n",
-                        i, tree[i].order, tree[i].addr, tree[i].state);
-            }
+            // for (i = 0; i < NODE_COUNT; i++) {
+            //     printf("Node idx=%d order=%d addr=%d state=%d\n",
+            //             i, tree[i].order, tree[i].addr, tree[i].state);
+            // }
             ProcessKill();
             return;
     }
@@ -431,7 +431,7 @@ int MemoryPageFaultHandler(PCB *pcb) {
   }
   // print heap sart and end , page fault info
 
-  dbprintf('a', "MemoryPageFaultHandler (%d): heap_start_page=%d, heap_end_page=%d, fault_page=%d, address=0x%x\n",
+  dbprintf('m', "MemoryPageFaultHandler (%d): heap_start_page=%d, heap_end_page=%d, fault_page=%d, address=0x%x\n",
            GetCurrentPid(), heap_start_page, heap_end_page, fault_page, fault_address);
   // Check if fault address is in heap region
   if (fault_page >= heap_start_page && fault_page <= heap_end_page) {
@@ -477,7 +477,7 @@ int MemoryAllocPage (void)
   uint32	v;
 
   if (nfreepages == 0) {
-    dbprintf ('a', "MemoryAllocPage: no free pages!\n");
+    dbprintf ('m', "MemoryAllocPage: no free pages!\n");
     return (0);
   }
   dbprintf ('m', "Allocating memory, starting with page %d\n", mapnum);
@@ -538,7 +538,7 @@ void *malloc(PCB *pcb, int size) {
     ProcessKill();
     return 0;
   }
-  dbprintf('a', "malloc: requesting allocation of size %d, needed order %d, max order %d\n",
+  dbprintf('m', "malloc: requesting allocation of size %d, needed order %d, max order %d\n",
            size, needed_order, MAX_ORDER);
   vaddress = BuddyAlloc(pcb, 0, needed_order);
   if (vaddress == 0){
@@ -552,9 +552,9 @@ void *malloc(PCB *pcb, int size) {
            needed_order, vaddress, size, block_size);
   }
   // done allocation, print buddy tree for debugging
-  dbprintf('a', "malloc: allocated memory at address %d of order %d\n",
+  dbprintf('m', "malloc: allocated memory at address %d of order %d\n",
            vaddress, needed_order);
-  print_buddy_tree(pcb);
+  // print_buddy_tree(pcb);
   return (void *)vaddress;
 }
 
@@ -581,8 +581,8 @@ void print_buddy_tree(PCB *pcb) {
 int mfree(PCB *pcb, void *ptr) {
   uint32 addr = (uint32)ptr;
   int order=-1, index =-1, i;
-  dbprintf('a', "mfree: freeing memory at address %d\n", addr);
-  print_buddy_tree(pcb);
+  dbprintf('m', "mfree: freeing memory at address %d\n", addr);
+  // print_buddy_tree(pcb);
   index = find_index_by_addr(pcb, addr);
 //   for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
 //     if (pcb->allocs[i].used &&
@@ -605,13 +605,9 @@ if (index == -1) {
 
   BuddyFree(pcb->tree, index, addr);
   // print allocs info and buddy tree for debugging
-  dbprintf('a', "mfree: freed memory at address 0x%x of order %d from node index %d\n",
+  dbprintf('m', "mfree: freed memory at address 0x%x of order %d from node index %d\n",
            addr, order, index);
-  for (i = 0; i < NODE_COUNT; i++) {
-    if (pcb->tree[i].state == FREE) continue;
-      dbprintf('a', "Node idx=%d order=%d addr=%d state=%d\n",
-               i, pcb->tree[i].order, pcb->tree[i].addr, pcb->tree[i].state);
-  }
+  // print_buddy_tree(pcb);
   // print allocation records
   // for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
   //     if (pcb->allocs[i].used) {
