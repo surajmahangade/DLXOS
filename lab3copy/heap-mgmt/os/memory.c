@@ -44,8 +44,8 @@ uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
       printf("Error: trying to allocate from invalid node idx=%d\n", idx);
       ProcessKill();
     }
-    dbprintf('a', "BuddyAlloc: at node idx=%d order=%d addr=%d state=%d\n",
-             idx, n->order, n->addr, n->state);
+    // dbprintf('a', "BuddyAlloc: at node idx=%d order=%d addr=%d state=%d\n",
+    //          idx, n->order, n->addr, n->state);
     if (n->order == needed_order) {
     if (n->state == FREE) {
       n->state = USED;
@@ -551,6 +551,10 @@ void *malloc(PCB *pcb, int size) {
     printf("Allocated the block: order = %d, addr = %d, requested mem size = %d, block size = %d\n",
            needed_order, vaddress, size, block_size);
   }
+  // done allocation, print buddy tree for debugging
+  dbprintf('a', "malloc: allocated memory at address %d of order %d\n",
+           vaddress, needed_order);
+  print_buddy_tree(pcb);
   return (void *)vaddress;
 }
 
@@ -563,11 +567,22 @@ int find_index_by_addr(PCB *pcb, uint32 addr) {
   }
   return -1;
 }
+void print_buddy_tree(PCB *pcb) {
+  int i;
+  printf("Buddy Tree State:\n");
+  for (i = 0; i < NODE_COUNT; i++) {
+    if (pcb->tree[i].state != FREE) {
+      printf("Node idx=%d order=%d addr=%d state=%d\n",
+             i, pcb->tree[i].order, pcb->tree[i].addr, pcb->tree[i].state);
+    }
+  }
+}
 
 int mfree(PCB *pcb, void *ptr) {
   uint32 addr = (uint32)ptr;
   int order=-1, index =-1, i;
-  dbprintf('a', "mfree: freeing memory at address 0x%x\n", addr);
+  dbprintf('a', "mfree: freeing memory at address %d\n", addr);
+  print_buddy_tree(pcb);
   index = find_index_by_addr(pcb, addr);
 //   for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
 //     if (pcb->allocs[i].used &&
