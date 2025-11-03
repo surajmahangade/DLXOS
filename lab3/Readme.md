@@ -45,4 +45,4 @@ Note: the following lists files that were edited while implementing the lab exer
 - The dynamic heap implementation (heap-mgmt-dyn) supports running multiple user processes concurrently. In testing it is able to handle approximately 10–15 processes in parallel before resource limits (heap pages / allocations) become constrained. Your mileage may vary depending on simulator memory settings.
 
 - Print Assumtion in memory.c when allocating a physical page for a virtual page in the heap
-  We haveprinted the physical page start address and the virtual page relative to the heap start, also note that the first page is not printing since the first page is allocated during process creation. Count starts from 0 for heap page number.
+  We haveprinted the physical page and the virtual page is relative to the heap start, also note that the first page is not printing since the first page is allocated during process creation. Count starts from 0 for heap page number.
