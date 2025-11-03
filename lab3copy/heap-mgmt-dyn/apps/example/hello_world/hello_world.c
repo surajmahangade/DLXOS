@@ -1,166 +1,82 @@
 #include "usertraps.h"
 #include "misc.h"
 
-// int reccursive_function(int count);
+#define PAGE_SZ     4096
+#define TOUCH_BYTE  0x7a
 
-
-inline int recursive_function(int count) {
-  if (count <= 0) {
-    return 0;
-  } else {
-  return 2 + recursive_function(count - 1);
-}
+static inline void touch_pages(char *p, int bytes) {
+  int off;
+  for (off = 0; off < bytes; off += PAGE_SZ) p[off] = TOUCH_BYTE;
+  if (bytes > 0) p[bytes - 1] = TOUCH_BYTE; // boundary touch
 }
 
+static inline int recursive_function(int n) { return (n <= 0) ? 0 : 2 + recursive_function(n - 1); }
 
-void main (int argc, char *argv[])
-{
-  sem_t s_procs_completed; // Semaphore to signal the original process that we're done
-  char *p;
-  char *og;
-  int x;
-  int result;
+void main (int argc, char *argv[]) {
+  sem_t s_procs_completed;
+  void *p4k=NULL, *p8k=NULL, *p12k=NULL, *p16k=NULL, *p64k=NULL;
+  void *a,*b,*c,*d,*x1,*x2;
+  void *small[8]; int ns=0;
   int i;
-  int size;
-  void *a, *b, *c, *d, *x1, *x2, *big;
-  void *m8, *m20, *m64;
-  void *blocks[16];
-  int nb = 0;
-  if (argc != 2) {
-    Printf("Usage: %s <handle_to_procs_completed_semaphore>\n"); 
-    Exit();
-  }
 
-  // Convert the command-line strings into integers for use as handles
+  if (argc != 2) { Printf("Usage: %s <sem>\n", argv[0]); Exit(); }
   s_procs_completed = dstrtol(argv[1], NULL, 10);
 
-  // Now print a message to show that everything worked
-  Printf("hello_world (%d): Hello world!\n", getpid());
-  // We'll run several in-depth tests exercising the buddy allocator.
-  Printf("\n===== HEAP ALLOCATOR TESTS START (pid %d) =====\n", getpid());
+  Printf("\n===== DYNAMIC HEAP TESTS (64KB cap) START pid=%d =====\n", getpid());
 
-  // Helper local variables
-    Printf("\n-- Test5: Large allocation (try full page 4096 bytes) --\n");
-    big = malloc(4096); // allocate exactly one page
-    Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
-    if (big) {
-      Printf("hello_world (%d): accessing first byte of big allocation -> %d\n", getpid(), (int)big);
-      // touch the page to force page fault if not backed
-      ((char*)big)[0] = 0x5a;
-      mfree(big);
-    }
+  // D0: allocate 1–4 pages and touch each page to trigger backing
+  Printf("\n-- D0: Force per-page backing with touches (1–4 pages) --\n");
+  p4k  = malloc( 4*1024); Printf("hello_world (%d): malloc(4KB)  -> %d\n", getpid(), (int)p4k);
+  p8k  = malloc( 8*1024); Printf("hello_world (%d): malloc(8KB)  -> %d\n", getpid(), (int)p8k);
+  p12k = malloc(12*1024); Printf("hello_world (%d): malloc(12KB) -> %d\n", getpid(), (int)p12k);
+  p16k = malloc(16*1024); Printf("hello_world (%d): malloc(16KB) -> %d\n", getpid(), (int)p16k);
 
-    m64 = malloc(64*1024); // 64KB (max heap block)
-    Printf("hello_world (%d): malloc(64KB) -> %d\n", getpid(), (int)m64);
-    if (m64) ((char*)m64)[0] = 3;
-    if (m64) { Printf("hello_world (%d): freeing 64KB %d\n", getpid(), (int)m64); mfree(m64); }
+  if (p4k)  touch_pages((char*)p4k,  4*1024);
+  if (p8k)  touch_pages((char*)p8k,  8*1024);
+  if (p12k) touch_pages((char*)p12k, 12*1024);
+  if (p16k) touch_pages((char*)p16k, 16*1024); // up to 4 pages so far
 
-    // Test 6: allocate multi-page blocks to exercise dynamic heap growth
-    Printf("\n-- Test6: Multi-page allocations (8KB, 20KB, 64KB) --\n");
-    m8 = malloc(8*1024);   // 8KB
-    Printf("hello_world (%d): malloc(8KB) -> %d\n", getpid(), (int)m8);
-    if (m8) ((char*)m8)[0] = 1; // touch
+  // Free in reverse to test coalescing
+  if (p16k) { Printf("hello_world (%d): free 16KB %d\n", getpid(), (int)p16k); mfree(p16k); }
+  if (p12k) { Printf("hello_world (%d): free 12KB %d\n", getpid(), (int)p12k); mfree(p12k); }
+  if (p8k)  { Printf("hello_world (%d): free 8KB  %d\n", getpid(), (int)p8k);  mfree(p8k); }
+  if (p4k)  { Printf("hello_world (%d): free 4KB  %d\n", getpid(), (int)p4k);  mfree(p4k); }
 
-    m20 = malloc(20*1024); // 20KB
-    Printf("hello_world (%d): malloc(20KB) -> %d\n", getpid(), (int)m20);
-    if (m20) ((char*)m20)[0] = 2;
+  // D0b: allocate full 64KB and touch all 16 pages
+  Printf("\n-- D0b: Full-heap allocation and touches (16 pages) --\n");
+  p64k = malloc(64*1024); Printf("hello_world (%d): malloc(64KB) -> %d\n", getpid(), (int)p64k);
+  if (p64k) touch_pages((char*)p64k, 64*1024);
+  if (p64k) { Printf("hello_world (%d): free 64KB %d\n", getpid(), (int)p64k); mfree(p64k); }
 
-    
+  // D1: classic small/medium tests to verify buddy logic unchanged
+  Printf("\n-- D1: Buddy behavior unchanged under dynamic heap --\n");
+  a = malloc(16);   Printf("hello_world (%d): malloc(16)  -> %d\n", getpid(), (int)a);   // order 0
+  b = malloc(40);   Printf("hello_world (%d): malloc(40)  -> %d\n", getpid(), (int)b);   // order 1
+  c = malloc(100);  Printf("hello_world (%d): malloc(100) -> %d\n", getpid(), (int)c);   // order 2
+  d = malloc(500);  Printf("hello_world (%d): malloc(500) -> %d\n", getpid(), (int)d);   // order 4
 
-    // Free multi-page allocations
-    if (m8) { Printf("hello_world (%d): freeing 8KB %d\n", getpid(), (int)m8); mfree(m8); }
-    if (m20) { Printf("hello_world (%d): freeing 20KB %d\n", getpid(), (int)m20); mfree(m20); }
-    
-
-  // Cleanup: free everything remaining (be conservative)
-  Printf("\n-- Cleanup: freeing remaining allocations --\n");
-  for (i = 0; i < nb; i++) {
-    if (blocks[i]) {
-      Printf("hello_world (%d): freeing blocks[%d] = %d\n", getpid(), i, (int)blocks[i]);
-      mfree(blocks[i]);
-    }
-  }
-
-  // Test 1: basic allocations of various sizes (should produce different orders)
-  Printf("\n-- Test1: Basic different-size allocations --\n");
-  a = malloc(16);   // should allocate 32 bytes (order 0)
-  Printf("hello_world (%d): malloc(16) -> %d\n", getpid(), (int)a);
-  b = malloc(40);   // should allocate 64 bytes (order 1)
-  Printf("hello_world (%d): malloc(40) -> %d\n", getpid(), (int)b);
-  c = malloc(100);  // should allocate 128 bytes (order 2)
-  Printf("hello_world (%d): malloc(100) -> %d\n", getpid(), (int)c);
-  d = malloc(500);  // should allocate 512 bytes (order 4)
-  Printf("hello_world (%d): malloc(500) -> %d\n", getpid(), (int)d);
-
-  // Keep references to avoid reuse
-  blocks[nb++] = a; blocks[nb++] = b; blocks[nb++] = c; blocks[nb++] = d;
-
-  // Test 2: free one block and reallocate similar size -> should reuse freed block
-  Printf("\n-- Test2: Free and reuse behavior --\n");
-  Printf("hello_world (%d): freeing address %d (malloc(40) result)\n", getpid(), (int)b);
+  Printf("\n-- D2: Free and reuse 64B --\n");
   mfree(b);
-  b = malloc(60); // still fits in 64 bytes; should ideally reuse previous freed 64-byte block
-  Printf("hello_world (%d): malloc(60) -> %d (should reuse freed 64-byte block)\n", getpid(), (int)b);
-  blocks[nb++] = b;
+  b = malloc(60);   Printf("hello_world (%d): malloc(60)  -> %d (expect reuse)\n", getpid(), (int)b);
 
-  // Test 3: allocate two adjacent equal-size blocks and then free them to observe coalescing
-  Printf("\n-- Test3: Buddy coalescing (allocate two equal blocks then free both) --\n");
-  x1 = malloc(40); // 64
-  x2 = malloc(40); // 64
+  Printf("\n-- D3: Coalescing check --\n");
+  x1 = malloc(40); x2 = malloc(40);
   Printf("hello_world (%d): x1=%d x2=%d\n", getpid(), (int)x1, (int)x2);
-  Printf("hello_world (%d): freeing x1=%d\n", getpid(), (int)x1);
-  mfree(x1);
-  Printf("hello_world (%d): freeing x2=%d (should trigger coalescing upward)\n", getpid(), (int)x2);
-  mfree(x2);
+  mfree(x1); mfree(x2);
 
-  // Test 4: many small allocations to exercise splitting
-  Printf("\n-- Test4: Multiple small allocations (32-byte blocks) and selective frees --\n");
+  Printf("\n-- D4: Eight small 32B blocks; free in pairs --\n");
+  ns = 0;
   for (i = 0; i < 8; i++) {
-    blocks[nb++] = malloc(16); // each should be 32 bytes
-    Printf("hello_world (%d): small alloc %d -> %d\n", getpid(), i, (int)blocks[nb-1]);
+    small[ns] = malloc(16);
+    Printf("hello_world (%d): small[%d] = %d\n", getpid(), ns, (int)small[ns]);
+    ns++;
   }
-  // Free pairs to coalesce progressively
-  Printf("hello_world (%d): freeing small blocks 0 and 1\n", getpid());
-  mfree(blocks[4]); mfree(blocks[5]);
-  Printf("hello_world (%d): freeing small blocks 2 and 3\n", getpid());
-  mfree(blocks[6]); mfree(blocks[7]);
+  mfree(small[0]); mfree(small[1]);
+  mfree(small[2]); mfree(small[3]);
 
-  // Test 5: large allocation occupying the rest or entire heap
-  // Printf("\n-- Test5: Large allocation (try full page 4096 bytes) --\n");
-  // big = malloc(4096); // may succeed if full-page allowed
-  // Printf("hello_world (%d): malloc(4096) -> %d\n", getpid(), (int)big);
-  // if (big) {
-  //   Printf("hello_world (%d): freeing big allocation %d\n", getpid(), (int)big);
-  //   mfree(big);
-  // }
+  Printf("\n===== DYNAMIC HEAP TESTS (64KB cap) END =====\n", getpid());
 
-  // // Cleanup: free everything remaining (be conservative)
-  // Printf("\n-- Cleanup: freeing remaining allocations --\n");
-  // for (i = 0; i < nb; i++) {
-  //   if (blocks[i]) {
-  //     Printf("hello_world (%d): freeing blocks[%d] = %d\n", getpid(), i, (int)blocks[i]);
-  //     mfree(blocks[i]);
-  //   }
-  // }
-
-  Printf("===== HEAP ALLOCATOR TESTS END =====\n\n");
-  // free
-  // Printf("hello_world (%d): freeing allocated memory at address %d\n", getpid(), p);
-  // mfree(p);
-
-  // p = (int*)(0x003DFFFC); // out of range
-  // Printf("hello_world (%d): accessing address %d, size of int %d\n", getpid(), p, sizeof(int));
-  // x = *p;        // READ → should raise TRAP_ACCESS (range)
-  // // print x
-  // Printf("hello_world (%d): read value %d from address %d\n", getpid(), x, p);
-  // make the stack to grow larger than 1 page.
-  result = recursive_function(1000);
-  Printf("hello_world (%d): recursive_function result %d\n", getpid(), result);
-  // Signal the semaphore to tell the original process that we're done
-  if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
-    Printf("hello_world (%d): Bad semaphore s_procs_completed (%d)!\n", getpid(), s_procs_completed);
-    Exit();
-  }
-
-  Printf("hello_world (%d): Done!\n", getpid());
+  Printf("hello_world (%d): recursive_function result %d\n", getpid(), recursive_function(1000));
+  if (sem_signal(s_procs_completed) != SYNC_SUCCESS) { Printf("hello_world (%d): Bad semaphore %d\n", getpid(), s_procs_completed); Exit(); }
+  Printf("hello_world (%d): Done.\n", getpid());
 }
