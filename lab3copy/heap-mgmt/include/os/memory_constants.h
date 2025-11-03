@@ -5,6 +5,12 @@
 // #define's that you are given:
 //------------------------------------------------
 
+#define HEAP_SIZE       4096
+#define MIN_BLOCK_SIZE  32
+#define MAX_ORDER       7           // because 2^7 * 32 = 4096
+#define NODE_COUNT      (1 << (MAX_ORDER + 1) - 1)  // Total nodes in buddy tree
+#define NUM_MAX_HEAP_ALLOCS HEAP_SIZE / MIN_BLOCK_SIZE
+typedef enum {FREE, SPLIT, USED} NodeState;
 // We can read this address in I/O space to figure out how much memory
 // is available on the system.
 #define	DLX_MEMSIZE_ADDRESS	0xffff0000

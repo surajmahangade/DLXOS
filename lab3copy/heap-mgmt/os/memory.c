@@ -9,6 +9,7 @@
 #include "dlxos.h"
 #include "process.h"
 #include "memory.h"
+#include "memory_constants.h"
 #include "queue.h"
 
 // num_pages = size_of_memory / size_of_one_page
@@ -17,6 +18,172 @@ static uint32 freemap[FREEMAP_SIZE]; // Bitmap for free pages
 static uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
+// static BuddyNode tree[NODE_COUNT];
+
+void BuddyInit(BuddyNode *tree, uint32 vaddress) {
+    int i;
+    tree[0].order = MAX_ORDER;
+    tree[0].addr = vaddress;
+    tree[0].state = FREE;
+
+    for (i = 1; i < NODE_COUNT; i++) {
+        tree[i].state = FREE;
+        tree[i].order = -1; // invalid
+    }
+}
+
+uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
+    BuddyNode *n = &pcb->tree[idx];
+    int left, right;
+    uint32 addr, half;
+    int i;
+
+    if (n->state == USED) return 0;
+
+    if (n->order == -1) {
+      printf("Error: trying to allocate from invalid node idx=%d\n", idx);
+      exitsim();
+    }
+    dbprintf('a', "BuddyAlloc: at node idx=%d order=%d addr=%d state=%d\n",
+             idx, n->order, n->addr, n->state);
+    if (n->order == needed_order) {
+        if (n->state == FREE) {
+            n->state = USED;
+            printf("Allocated block: order=%d addr=%d size=%d\n",
+                    n->order, n->addr, MIN_BLOCK_SIZE << n->order);
+            for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+                if (!pcb->allocs[i].used) {
+                    pcb->allocs[i].addr = n->addr;
+                    pcb->allocs[i].order = needed_order;
+                    pcb->allocs[i].used = 1;
+                    pcb->allocs[i].index = idx;
+                    break;
+                }
+            }
+            return n->addr;
+        }
+        // means it is SPLIT hence we don't have a free block here 
+        else return 0;
+    }
+
+    // need smaller block
+    if (n->state == FREE) {
+        n->state = SPLIT;
+        left = 2*idx + 1;
+        right = 2*idx + 2;
+        half = (MIN_BLOCK_SIZE << (n->order - 1));
+
+        pcb->tree[left].order = n->order - 1;
+        pcb->tree[right].order = n->order - 1;
+        pcb->tree[left].addr = n->addr;
+        pcb->tree[right].addr = n->addr + half;
+        pcb->tree[left].state = FREE;
+        pcb->tree[right].state = FREE;
+
+        printf("Created left child node (order=%d, addr=%d, size=%d) of parent (order=%d, addr=%d, size=%d)\n",
+                pcb->tree[left].order, pcb->tree[left].addr, half,
+                n->order, n->addr, half*2);
+        printf("Created right child node (order=%d, addr=%d, size=%d) of parent (order=%d, addr=%d, size=%d)\n",
+                pcb->tree[right].order, pcb->tree[right].addr, half,
+                n->order, n->addr, half*2);
+    }
+
+    addr = BuddyAlloc(pcb, 2*idx + 1, needed_order);
+    if (addr == 0)
+        addr = BuddyAlloc(pcb, 2*idx + 2, needed_order);
+
+    // if both children failed and both free, collapse back
+    // if (addr == -1) {
+    //     BuddyNode *l = &tree[2*idx + 1], *r = &tree[2*idx + 2];
+    //     if (l->state == FREE && r->state == FREE)
+    //         n->state = FREE;
+    // }
+    return addr;
+}
+
+
+void merge(BuddyNode *tree, int idx) {
+    int parent;
+    int left;
+    int right;
+    BuddyNode *L;
+    BuddyNode *R;
+    BuddyNode *P;
+    // find parent
+    if (idx == 0) {
+      return;  // root has no parent
+      }
+
+    parent = (idx - 1) / 2;
+    left = 2 * parent + 1;
+    right = 2 * parent + 2;
+
+    L = &tree[left];
+    R = &tree[right];
+    P = &tree[parent];
+
+    // only coalesce if both children are free
+    if (L->state == FREE && R->state == FREE) {
+        P->state = FREE;
+        // set order
+        P->order = L->order + 1;
+        printf("Coalesced buddy nodes (order=%d, addr=%d, size=%d) & "
+               "(order=%d, addr=%d, size=%d)\n",
+               L->order, L->addr, MIN_BLOCK_SIZE << L->order,
+               R->order, R->addr, MIN_BLOCK_SIZE << R->order);
+        printf("into parent node (order=%d, addr=%d, size=%d)\n",
+               P->order, P->addr, MIN_BLOCK_SIZE << P->order);
+
+        // recursively try to merge upward
+        merge(tree, parent);
+    }
+}
+
+void BuddyFree(BuddyNode *tree, int idx, uint32 addr) {
+    int size;
+    int i;  
+    BuddyNode *n = &tree[idx];
+    size = MIN_BLOCK_SIZE << n->order;
+
+    // if (addr < n->addr || addr >= n->addr + size) return;
+
+    if (n->state == USED) {
+        if (n->addr != addr) {
+            printf("Error: trying to free block at addr=%x but node addr=%x\n",
+                    addr, n->addr);
+            // print entire tree for debugging
+            for (i = 0; i < NODE_COUNT; i++) {
+                printf("Node idx=%d order=%d addr=%d state=%d\n",
+                        i, tree[i].order, tree[i].addr, tree[i].state);
+            }
+            exitsim();
+            return;
+        }
+        n->state = FREE;
+        printf("Freed block: order=%d addr=%d size=%d\n",
+                n->order, n->addr, size);
+        merge(tree, idx);
+        return;
+    }
+    if (n->state == SPLIT) {
+        // asked to free a block but this node is split, error
+        printf("Error: trying to free block at addr=%d but node (order=%d, addr=%d) is SPLIT\n",
+                addr, n->order, n->addr);
+        // print entire tree for debugging
+            for (i = 0; i < NODE_COUNT; i++) {
+                printf("Node idx=%d order=%d addr=%d state=%d\n",
+                        i, tree[i].order, tree[i].addr, tree[i].state);
+            }
+            exitsim();
+            return;
+    }
+    else {
+        printf("Error: trying to free block at addr=%d but node (order=%d, addr=%d) is already FREE\n",
+                addr, n->order, n->addr);
+        return;
+    }
+
+}
 
 //----------------------------------------------------------------------
 //
@@ -228,6 +395,8 @@ int MemoryPageFaultHandler(PCB *pcb) {
   uint32 fault_page;
   uint32 stack_page;
   int page;
+  int heap_start_page = pcb->heapstartpage; // heap starts at virtual page 4
+  int heap_end_page = heap_start_page + (HEAP_SIZE / MEM_PAGESIZE )- 1; // adjust as per your heap size
   
   // Get the faulting address (with offset zeroed out)
   fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
@@ -270,6 +439,33 @@ int MemoryPageFaultHandler(PCB *pcb) {
              GetCurrentPid(), page, fault_page, nfreepages);
     return MEM_SUCCESS;
   }
+  // print heap sart and end , page fault info
+
+  dbprintf('a', "MemoryPageFaultHandler (%d): heap_start_page=%d, heap_end_page=%d, fault_page=%d, address=0x%x\n",
+           GetCurrentPid(), heap_start_page, heap_end_page, fault_page, fault_address);
+  // Check if fault address is in heap region
+  if (fault_page >= heap_start_page && fault_page <= heap_end_page) {
+    // This is legitimate heap access
+    if (pcb->pagetable[fault_page] & MEM_PTE_VALID) {
+      dbprintf('m', "MemoryPageFaultHandler (%d): page %d already allocated?\n",
+               GetCurrentPid(), fault_page);
+      return MEM_SUCCESS;
+    }
+    // Allocate a new physical page
+    page = MemoryAllocPage();
+    if (page <= 0) {
+      printf("FATAL ERROR: Out of physical memory in MemoryPageFaultHandler for PID %d!\n",
+             GetCurrentPid());
+      ProcessKill();
+      return MEM_FAIL;  
+    }
+    // Install the new page in the page table
+    pcb->pagetable[fault_page] = MemorySetupPte(page);
+    pcb->npages++;
+    dbprintf('m', "MemoryPageFaultHandler (%d): allocated physical page %d for virtual page %d, remaining pages %d\n",
+             GetCurrentPid(), page, fault_page, nfreepages);
+    return MEM_SUCCESS;
+  }
   
   // Not a valid stack access - segmentation fault
   printf("SEGMENTATION FAULT: Process %d accessed invalid address 0x%x\n", 
@@ -291,6 +487,7 @@ int MemoryAllocPage (void)
   uint32	v;
 
   if (nfreepages == 0) {
+    dbprintf ('a', "MemoryAllocPage: no free pages!\n");
     return (0);
   }
   dbprintf ('m', "Allocating memory, starting with page %d\n", mapnum);
@@ -322,6 +519,85 @@ void MemoryFreePage(uint32 page) {
   nfreepages += 1;
   dbprintf ('m',"Freed page %d, %d remaining.\n", page, nfreepages);
 }
+int GetNeededOrder(int memsize) {
+    int rounded_size, order;
+    if (memsize <= 0) return -1;
 
-void *malloc(PCB *pcb, int size) {}
-int mfree(PCB *pcb, void *ptr) {}
+    // 1. round up to multiple of MIN_BLOCK_SIZE
+    rounded_size = ((memsize + MIN_BLOCK_SIZE - 1) / MIN_BLOCK_SIZE) * MIN_BLOCK_SIZE;
+
+    // 2. find smallest order whose block fits
+    order = 0;
+    while ((MIN_BLOCK_SIZE << order) < rounded_size) {
+        order++;
+      }
+    if (order > MAX_ORDER) {
+      printf("Error: malloc size %d exceeds maximum allocatable block size, max order is %d, requested order is %d\n", 
+           memsize, MAX_ORDER, order);
+      return -1;  // exceeds heap}
+    }
+    return order;
+}
+
+
+void *malloc(PCB *pcb, int size) {
+  uint32 vaddress;
+  int needed_order = GetNeededOrder(size);
+  int i;
+  if (needed_order == -1) {
+    exitsim();
+    return 0;
+  }
+  dbprintf('a', "malloc: requesting allocation of size %d, needed order %d, max order %d\n",
+           size, needed_order, MAX_ORDER);
+  vaddress = BuddyAlloc(pcb, 0, needed_order);
+  if (vaddress == 0){
+    printf("Error: malloc failed to allocate %d bytes\n", size);
+    exitsim();
+    return 0;
+  }
+  return (void *)vaddress;
+}
+
+int mfree(PCB *pcb, void *ptr) {
+  uint32 addr = (uint32)ptr;
+  int order=-1, index =-1, i;
+  dbprintf('a', "mfree: freeing memory at address 0x%x\n", addr);
+  
+  for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+    if (pcb->allocs[i].used &&
+        pcb->allocs[i].addr == addr) {
+        order = pcb->allocs[i].order;
+        index = pcb->allocs[i].index;
+        pcb->allocs[i].used = 0;  // mark freed
+        break;
+    }
+}
+if (index == -1) {
+    printf("Error: mfree failed to find allocation record for address %d\n", addr);
+    for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+          dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
+                   i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
+  }
+    exitsim();
+    return -1;
+  }
+
+  BuddyFree(pcb->tree, index, addr);
+  // print allocs info and buddy tree for debugging
+  dbprintf('a', "mfree: freed memory at address 0x%x of order %d from node index %d\n",
+           addr, order, index);
+  for (i = 0; i < NODE_COUNT; i++) {
+    if (pcb->tree[i].state == FREE) continue;
+      dbprintf('a', "Node idx=%d order=%d addr=%d state=%d\n",
+               i, pcb->tree[i].order, pcb->tree[i].addr, pcb->tree[i].state);
+  }
+  // print allocation records
+  for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+      if (pcb->allocs[i].used) {
+          dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
+                   i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
+      }
+  }
+  return 0;
+}

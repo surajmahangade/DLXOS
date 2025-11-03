@@ -31,6 +31,18 @@
 #define	PROCESS_TYPE_USER	0x200
 
 typedef	void (*VoidFunc)();
+typedef struct {
+    NodeState state;
+    int order;          // 0..MAX_ORDER
+    uint32 addr;           // offset from heap base
+} BuddyNode;
+
+typedef struct {
+    int addr;   // offset from heap base (or virtual address)
+    int order;  // buddy order of the allocated block
+    int used;   // 1 = active allocation, 0 = free slot
+    int index;
+} AllocRecord;
 
 // Process control block
 typedef struct PCB {
@@ -42,6 +54,9 @@ typedef struct PCB {
   uint32	pagetable[MEM_L1TABLE_SIZE]; // Statically allocated page table
   int		npages;		// Number of pages allocated to this process
   Link		*l;		// Used for keeping PCB in queues
+  BuddyNode tree[NODE_COUNT]; // Buddy system tree for heap management
+  int heapstartpage; // starting page number of heap
+  AllocRecord allocs[NUM_MAX_HEAP_ALLOCS];
 } PCB;
 
 extern PCB	*currentPCB;

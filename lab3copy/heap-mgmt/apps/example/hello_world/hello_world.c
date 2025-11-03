@@ -8,7 +8,7 @@ inline int recursive_function(int count) {
   if (count <= 0) {
     return 0;
   } else {
-    return 1 + recursive_function(count - 1);
+    return 2 + recursive_function(count - 1);
   }
 }
 
@@ -16,9 +16,12 @@ inline int recursive_function(int count) {
 void main (int argc, char *argv[])
 {
   sem_t s_procs_completed; // Semaphore to signal the original process that we're done
-  int *p;
+  char *p;
+  char *og;
   int x;
   int result;
+  int i;
+  int size;
   if (argc != 2) { 
     Printf("Usage: %s <handle_to_procs_completed_semaphore>\n"); 
     Exit();
@@ -29,6 +32,36 @@ void main (int argc, char *argv[])
 
   // Now print a message to show that everything worked
   Printf("hello_world (%d): Hello world!\n", getpid());
+  size = 1024*1; // 4KB
+  // call malloc
+  og = p = (char *)malloc(size); // allocate 
+  Printf("hello_world (%d): allocated size %d at address %d\n", getpid(), size, p);
+  p = (char *)malloc(size); // allocate 
+  Printf("hello_world (%d): allocated size %d at address %d\n", getpid(), size, p);
+  mfree(p);
+  p = (char *)malloc(size); // allocate 
+  Printf("hello_world (%d): allocated size %d at address %d\n", getpid(), size, p);
+  mfree(p);
+  p = (char *)malloc(size); // allocate 
+  Printf("hello_world (%d): allocated size %d at address %d\n", getpid(), size, p);
+  mfree(p);
+  // access the allocated memory
+  for (i = 0; i < size/sizeof(char); i++) {
+    // accesing addres
+    // Printf("hello_world (%d): accessing address %d\n", getpid(), &p[i]);
+    p[i] = i;
+  }
+  i = ((1024*4) - sizeof(char)); // last byte out of allocated range
+  // acces last address 1 byte
+  x = og[i];
+  Printf("hello_world (%d): read value %c from address %d\n", getpid(), x, &og[i]);
+  // og = p = (char *)malloc(size);
+  og = p = (char *)malloc(size);
+  og = p = (char *)malloc(size);
+  og = p = (char *)malloc(size);
+  // free
+  // Printf("hello_world (%d): freeing allocated memory at address %d\n", getpid(), p);
+  mfree(p);
 
   // p = (int*)(0x003DFFFC); // out of range
   // Printf("hello_world (%d): accessing address %d, size of int %d\n", getpid(), p, sizeof(int));

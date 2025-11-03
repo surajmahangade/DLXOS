@@ -5,7 +5,6 @@
 #include "memory_constants.h"
 
 extern int lastosaddress; // Defined in an assembly file
-
 //--------------------------------------------------------
 // Existing function prototypes:
 //--------------------------------------------------------
