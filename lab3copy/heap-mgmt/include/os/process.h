@@ -37,12 +37,12 @@ typedef struct {
     uint32 addr;           // offset from heap base
 } BuddyNode;
 
-typedef struct {
-    int addr;   // offset from heap base (or virtual address)
-    int order;  // buddy order of the allocated block
-    int used;   // 1 = active allocation, 0 = free slot
-    int index;
-} AllocRecord;
+// typedef struct {
+//     int addr;   // offset from heap base (or virtual address)
+//     int order;  // buddy order of the allocated block
+//     int used;   // 1 = active allocation, 0 = free slot
+//     int index;
+// } AllocRecord;
 
 // Process control block
 typedef struct PCB {
@@ -56,7 +56,7 @@ typedef struct PCB {
   Link		*l;		// Used for keeping PCB in queues
   BuddyNode tree[NODE_COUNT]; // Buddy system tree for heap management
   int heapstartpage; // starting page number of heap
-  AllocRecord allocs[NUM_MAX_HEAP_ALLOCS];
+  // AllocRecord allocs[NUM_MAX_HEAP_ALLOCS];
 } PCB;
 
 extern PCB	*currentPCB;

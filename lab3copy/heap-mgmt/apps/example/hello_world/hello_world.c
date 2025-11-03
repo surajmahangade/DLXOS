@@ -32,10 +32,11 @@ void main (int argc, char *argv[])
 
   // Now print a message to show that everything worked
   Printf("hello_world (%d): Hello world!\n", getpid());
-  size = 1024*1; // 4KB
+  size = 1024*20; // 4KB
   // call malloc
   og = p = (char *)malloc(size); // allocate 
   Printf("hello_world (%d): allocated size %d at address %d\n", getpid(), size, p);
+  mfree(p);
   p = (char *)malloc(size); // allocate 
   Printf("hello_world (%d): allocated size %d at address %d\n", getpid(), size, p);
   mfree(p);
@@ -56,12 +57,12 @@ void main (int argc, char *argv[])
   x = og[i];
   Printf("hello_world (%d): read value %c from address %d\n", getpid(), x, &og[i]);
   // og = p = (char *)malloc(size);
-  og = p = (char *)malloc(size);
-  og = p = (char *)malloc(size);
-  og = p = (char *)malloc(size);
+  // og = p = (char *)malloc(size);
+  // og = p = (char *)malloc(size);
+  // og = p = (char *)malloc(size);
   // free
   // Printf("hello_world (%d): freeing allocated memory at address %d\n", getpid(), p);
-  mfree(p);
+  // mfree(p);
 
   // p = (int*)(0x003DFFFC); // out of range
   // Printf("hello_world (%d): accessing address %d, size of int %d\n", getpid(), p, sizeof(int));

@@ -51,15 +51,15 @@ uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
             n->state = USED;
             printf("Allocated block: order=%d addr=%d size=%d\n",
                     n->order, n->addr, MIN_BLOCK_SIZE << n->order);
-            for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
-                if (!pcb->allocs[i].used) {
-                    pcb->allocs[i].addr = n->addr;
-                    pcb->allocs[i].order = needed_order;
-                    pcb->allocs[i].used = 1;
-                    pcb->allocs[i].index = idx;
-                    break;
-                }
-            }
+            // for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+            //     if (!pcb->allocs[i].used) {
+            //         pcb->allocs[i].addr = n->addr;
+            //         pcb->allocs[i].order = needed_order;
+            //         pcb->allocs[i].used = 1;
+            //         pcb->allocs[i].index = idx;
+            //         break;
+            //     }
+            // }
             return n->addr;
         }
         // means it is SPLIT hence we don't have a free block here 
@@ -559,26 +559,36 @@ void *malloc(PCB *pcb, int size) {
   return (void *)vaddress;
 }
 
+int find_index_by_addr(PCB *pcb, uint32 addr) {
+  int i;
+  for (i = 0; i < NODE_COUNT; i++) {
+    if (pcb->tree[i].addr == addr && pcb->tree[i].state == USED) {
+        return i;
+    }
+  }
+  return -1;
+}
+
 int mfree(PCB *pcb, void *ptr) {
   uint32 addr = (uint32)ptr;
   int order=-1, index =-1, i;
   dbprintf('a', "mfree: freeing memory at address 0x%x\n", addr);
-  
-  for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
-    if (pcb->allocs[i].used &&
-        pcb->allocs[i].addr == addr) {
-        order = pcb->allocs[i].order;
-        index = pcb->allocs[i].index;
-        pcb->allocs[i].used = 0;  // mark freed
-        break;
-    }
-}
+  index = find_index_by_addr(pcb, addr);
+//   for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+//     if (pcb->allocs[i].used &&
+//         pcb->allocs[i].addr == addr) {
+//         order = pcb->allocs[i].order;
+//         index = pcb->allocs[i].index;
+//         pcb->allocs[i].used = 0;  // mark freed
+//         break;
+//     }
+// }
 if (index == -1) {
     printf("Error: mfree failed to find allocation record for address %d\n", addr);
-    for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
-          dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
-                   i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
-  }
+  //   for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+  //         dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
+  //                  i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
+  // }
     exitsim();
     return -1;
   }
@@ -593,11 +603,11 @@ if (index == -1) {
                i, pcb->tree[i].order, pcb->tree[i].addr, pcb->tree[i].state);
   }
   // print allocation records
-  for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
-      if (pcb->allocs[i].used) {
-          dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
-                   i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
-      }
-  }
+  // for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
+  //     if (pcb->allocs[i].used) {
+  //         dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
+  //                  i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
+  //     }
+  // }
   return 0;
 }
