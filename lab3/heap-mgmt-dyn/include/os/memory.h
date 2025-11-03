@@ -5,6 +5,7 @@
 #include "memory_constants.h"
 
 extern int lastosaddress; // Defined in an assembly file
+extern uint32 pagestart;  // Defined in memory.c
 
 //--------------------------------------------------------
 // Existing function prototypes:

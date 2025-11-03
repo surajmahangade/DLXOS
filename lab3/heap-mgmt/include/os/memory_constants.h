@@ -53,10 +53,10 @@
 #define MEM_MAX_PAGES (MEM_MAX_PHYS_MEM >> MEM_L1FIELD_FIRST_BITNUM)
 
 // Mask to extract page offset from virtual address
-#define MEM_PAGE_OFFSET_MASK (MEM_PAGESIZE - 1)
+#define MEM_ADDRESS_OFFSET_MASK (MEM_PAGESIZE - 1)
 
 // Mask to convert PTE to physical page address
-#define MEM_ADDRESS_OFFSET_MASK (~(MEM_PTE_READONLY | MEM_PTE_DIRTY | MEM_PTE_VALID))
+#define MEM_PTE_ADDR_MASK (~(MEM_PTE_READONLY | MEM_PTE_DIRTY | MEM_PTE_VALID))
 
 // Maximum page number in virtual address space
 #define MEM_MAX_VIRTUAL_PAGE (MEM_L1TABLE_SIZE - 1)

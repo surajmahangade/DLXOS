@@ -13,7 +13,7 @@
 
 // num_pages = size_of_memory / size_of_one_page
 static uint32 freemap[MEM_MAX_PAGES / 32 + 1];
-static uint32 pagestart;
+uint32 pagestart;
 static int nfreepages;
 static int freemapmax;
 
@@ -31,6 +31,11 @@ typedef struct buddy_node {
 #define MAX_BUDDY_NODES 256
 static buddy_node_t buddy_node_pool[MAX_BUDDY_NODES];
 static int buddy_node_pool_index = 0;
+
+// Forward declarations
+static int is_heap_address_allocated(PCB *pcb, uint32 vaddr);
+static int init_heap(PCB *pcb);
+void MemoryIncreaseRefcount(uint32 page);
 
 static inline uint32 buddy_block_size(int order) {
   return MEM_BUDDY_MIN_SIZE << order;
@@ -83,11 +88,10 @@ int MemoryGetSize() {
 void MemoryModuleInit() {
   int i;
   int memsize = MemoryGetSize();
-  int os_pages;
   int total_pages;
   
   // Calculate where usable memory starts (after OS)
-  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & MEM_ADDRESS_OFFSET_MASK;
+  pagestart = ((uint32)&lastosaddress + MEM_PAGESIZE - 1) & ~MEM_ADDRESS_OFFSET_MASK;
   
   // Calculate total available pages in the system
   total_pages = (memsize - pagestart) / MEM_PAGESIZE;
@@ -145,10 +149,10 @@ uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
   }
 
   // Extract offset from virtual address
-  offset = addr & MEM_PAGE_OFFSET_MASK;
+  offset = addr & MEM_ADDRESS_OFFSET_MASK;
   
   // Construct the physical address: (physical page address) | offset
-  physaddr = (pte & MEM_ADDRESS_OFFSET_MASK) | offset;
+  physaddr = (pte & MEM_PTE_ADDR_MASK) | offset;
 
   dbprintf('m', "MemoryTranslateUserToSystem: vaddr 0x%x -> paddr 0x%x\n", addr, physaddr);
   return physaddr;
@@ -433,6 +437,13 @@ void MemoryFreePage(uint32 page) {
            page, nfreepages);
 }
 
+// Placeholder for MemoryIncreaseRefcount - implement based on your OS design
+void MemoryIncreaseRefcount(uint32 page) {
+  // This function should increment the reference count for a physical page
+  // Implementation depends on your reference counting mechanism
+  dbprintf('m', "MemoryIncreaseRefcount: page %d\n", page);
+}
+
 // code for question 3
 // void *malloc(PCB *pcb, int size) {}
 // int mfree(PCB *pcb, void *ptr) {}
@@ -457,39 +468,6 @@ static buddy_node_t* alloc_buddy_node(int order, uint32 addr, buddy_node_t *pare
 
 static void reset_buddy_pool(void) {
   buddy_node_pool_index = 0;
-}
-
-//----------------------------------------------------------------------
-// Initialize heap for a process (Q4 - starts with 1 page, can grow)
-//----------------------------------------------------------------------
-static int init_heap(PCB *pcb) {
-  
-  if (pcb->heap_vaddr_start == 0) {
-    // This shouldn't happen if ProcessFork did its job
-    printf("ERROR: init_heap called but heap_vaddr_start is 0!\n");
-    return -1;
-  }
-  
-  // Check if first page is already mapped (it should be)
-  int vpage = pcb->heap_vaddr_start >> MEM_L1FIELD_FIRST_BITNUM;
-  if (!(pcb->pagetable[vpage] & MEM_PTE_VALID)) {
-    printf("ERROR: init_heap called but first heap page not mapped!\n");
-    return -1;
-  }
-  
-  // Create root node for buddy tree - starts with max order (64KB = 16 pages)
-  pcb->heap_root = (void *)alloc_buddy_node(MEM_BUDDY_MAX_ORDER, 0, NULL);
-  
-  if (pcb->heap_root == NULL) {
-    return -1;
-  }
-  
-  dbprintf('m', "init_heap (%d): initialized buddy tree with root at order %d\n",
-           GetPidFromAddress(pcb), MEM_BUDDY_MAX_ORDER);
-  dbprintf('m', "init_heap (%d): heap can grow to 64KB (%d pages)\n",
-           GetPidFromAddress(pcb), MEM_HEAP_PAGES);
-  
-  return 0;
 }
 
 //----------------------------------------------------------------------
@@ -533,6 +511,40 @@ static int is_heap_address_allocated(PCB *pcb, uint32 vaddr) {
   offset = vaddr - pcb->heap_vaddr_start;
   
   return is_allocated_in_subtree((buddy_node_t *)pcb->heap_root, offset);
+}
+
+//----------------------------------------------------------------------
+// Initialize heap for a process (Q4 - starts with 1 page, can grow)
+//----------------------------------------------------------------------
+static int init_heap(PCB *pcb) {
+  int vpage;
+  
+  if (pcb->heap_vaddr_start == 0) {
+    // This shouldn't happen if ProcessFork did its job
+    printf("ERROR: init_heap called but heap_vaddr_start is 0!\n");
+    return -1;
+  }
+  
+  // Check if first page is already mapped (it should be)
+  vpage = pcb->heap_vaddr_start >> MEM_L1FIELD_FIRST_BITNUM;
+  if (!(pcb->pagetable[vpage] & MEM_PTE_VALID)) {
+    printf("ERROR: init_heap called but first heap page not mapped!\n");
+    return -1;
+  }
+  
+  // Create root node for buddy tree - starts with max order (64KB = 16 pages)
+  pcb->heap_root = (void *)alloc_buddy_node(MEM_BUDDY_MAX_ORDER, 0, NULL);
+  
+  if (pcb->heap_root == NULL) {
+    return -1;
+  }
+  
+  dbprintf('m', "init_heap (%d): initialized buddy tree with root at order %d\n",
+           GetPidFromAddress(pcb), MEM_BUDDY_MAX_ORDER);
+  dbprintf('m', "init_heap (%d): heap can grow to 64KB (%d pages)\n",
+           GetPidFromAddress(pcb), MEM_HEAP_PAGES);
+  
+  return 0;
 }
 
 //----------------------------------------------------------------------

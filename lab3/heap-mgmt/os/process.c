@@ -132,6 +132,10 @@ void ProcessSetStatus (PCB *pcb, int status) {
 //----------------------------------------------------------------------
 void ProcessFreeResources (PCB *pcb) {
   int i = 0;
+  uint32 page;
+  uint32 physAddr;
+  uint32 sysStackPage;
+
 
   // Allocate a new link for this pcb on the freepcbs queue
   if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
@@ -152,15 +156,15 @@ void ProcessFreeResources (PCB *pcb) {
 
   for (i = 0; i < MEM_L1TABLE_SIZE; i++) {
     if (pcb->pagetable[i] & MEM_PTE_VALID) {
-      uint32 physAddr = pcb->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
-      uint32 page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
+      physAddr = pcb->pagetable[i] & MEM_ADDRESS_OFFSET_MASK;
+      page = (physAddr - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
       MemoryFreePage(page);
       pcb->pagetable[i] = 0;
     }
   }
   
   if (pcb->sysStackArea != 0) {
-    uint32 sysStackPage = (pcb->sysStackArea - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
+    sysStackPage = (pcb->sysStackArea - pagestart) >> MEM_L1FIELD_FIRST_BITNUM;
     MemoryFreePage(sysStackPage);
     pcb->sysStackArea = 0;
   }
@@ -411,7 +415,11 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   uint32 offset;           // Used in parsing command line argument strings, holds offset (in bytes) from 
                            // beginning of the string to the current argument.
   uint32 initial_user_params_bytes;  // total number of bytes in initial user parameters array
-
+  int sysStackPage;
+  int heapVPage;
+  int heapPage;
+  int userStackPage;
+  int userStackIndex;
 
   intrs = DisableIntrs ();
   dbprintf ('I', "Old interrupt value was 0x%x.\n", intrs);
@@ -451,7 +459,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // equal to the last 4-byte-aligned address in physical page
   // for the system stack.
   //---------------------------------------------------------
-  int sysStackPage = MemoryAllocPage();
+  sysStackPage = MemoryAllocPage();
   if (sysStackPage < 0) {
     printf("FATAL ERROR: could not allocate system stack page in ProcessFork!\n");
     exitsim();
@@ -473,31 +481,31 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
             name, page, i);
   }
 
-  int heapPage = MemoryAllocPage();
+  heapPage = MemoryAllocPage();
   if (heapPage < 0) {
     printf("FATAL ERROR: could not allocate initial heap page in ProcessFork!\n");
     exitsim();
   }
-  int heapVPage = 4;  // Heap starts at virtual page 4
+  heapVPage = 4;  // Heap starts at virtual page 4
   pcb->pagetable[heapVPage] = MemorySetupPte(heapPage);
 
   dbprintf('m', "ProcessFork (%s): allocated heap page %d at virtual page %d\n",
           name, heapPage, heapVPage);
 
   
-  pcb->heap_vaddr_start = heapVPage << MEM_L1FIELD_FIRST_BITNUM;
-  pcb->heap_vaddr_end = pcb->heap_vaddr_start;
-  pcb->heap_pages_mapped = 1;
-  pcb->heap_root = NULL;  // Buddy tree will be initialized on first malloc()
+  pcb->heap_page = heapPage;
+  pcb->heap_vaddr = heapVPage << MEM_L1FIELD_FIRST_BITNUM;
+  pcb->heap_root = NULL;
+
 
   // Allocate 1 page for user stack at TOP of virtual address space
-  int userStackPage = MemoryAllocPage();
+  userStackPage = MemoryAllocPage();
   if (userStackPage < 0) {
     printf("FATAL ERROR: could not allocate user stack page in ProcessFork!\n");
     exitsim();
   }
   // User stack is at the last page of virtual address space
-  int userStackIndex = MEM_L1TABLE_SIZE - 1;
+  userStackIndex = MEM_L1TABLE_SIZE - 1;
   pcb->pagetable[userStackIndex] = MemorySetupPte(userStackPage);
   dbprintf('m', "ProcessFork (%s): allocated user stack page %d at virtual page %d\n",
           name, userStackPage, userStackIndex);
