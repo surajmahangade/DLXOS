@@ -1,17 +1,5 @@
 #include "usertraps.h"
 #include "misc.h"
-
-/*
- * ==========================================================================
- * Copy-On-Write (COW) Test Program
- * ==========================================================================
- * This program verifies correct Copy-on-Write behavior in the OS by:
- *   1. Ensuring page table entries are marked read-only after fork()
- *   2. Triggering TRAP_ROP_ACCESS on writes to shared pages
- *   3. Confirming parent and child get independent memory after writing
- * ==========================================================================
- */
-
 #define PAGE_SIZE   4096
 #define PAGE_SHIFT  12
 
@@ -125,16 +113,6 @@ void main(int argc, char *argv[])
     for (i = 0; i < 10000000; i++);
   }
 
-  // -------------------- COMMON END --------------------
-  Printf("========================================\n");
-  Printf("Process %d: COW Test Complete!\n", getpid());
-  Printf("========================================\n\n");
-
-  Printf("SUMMARY:\n");
-  Printf(" - TRAP_ROP_ACCESS should have been triggered\n");
-  Printf(" - Parent holds positive values\n");
-  Printf(" - Child holds negative values\n");
-  Printf(" - Independent pages confirm COW success\n\n");
 
   if (sem_signal(s_procs_completed) != SYNC_SUCCESS) {
     Printf("Error: Failed to signal semaphore!\n");
