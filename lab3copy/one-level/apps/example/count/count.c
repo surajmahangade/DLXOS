@@ -17,7 +17,7 @@ void main (int argc, char *argv[])
   Printf("COUNT (%d): Hello world! tmo\n", getpid());
 
   // count to a large number
-  for (i = 0; i < 1000000000LL; i++) {
+  for (i = 0; i < 1000000LL; i++) {
     // do nothing, just count
   }
   // print ending message

@@ -39,7 +39,7 @@ void main (int argc, char *argv[])
 
   // Create Hello World processes
   Printf("-------------------------------------------------------------------------------------\n");
-  Printf("makeprocs (%d): Creating %d hello world's in a row, but only one runs at a time\n", getpid(), num_hello_world);
+  // Printf("makeprocs (%d): Creating %d hello world's in a row, but only one runs at a time\n", getpid(), num_hello_world);
   // for(i=0; i<num_hello_world; i++) {
   //   Printf("makeprocs (%d): Creating hello world #%d\n", getpid(), i);
   //   process_create(proc_name, s_procs_completed_str, NULL);
@@ -50,8 +50,8 @@ void main (int argc, char *argv[])
   // }
 
   // Make simultateous hello_world processes
-  Printf("-------------------------------------------------------------------------------------\n");
-  Printf("makeprocs (%d): Creating %d hello world's all at once\n", getpid(), num_hello_world);
+  // Printf("-------------------------------------------------------------------------------------\n");
+  // Printf("makeprocs (%d): Creating %d hello world's all at once\n", getpid(), num_hello_world);
   for(i=0; i<num_hello_world; i++) {
     Printf("makeprocs (%d): Creating hello world #%d\n", getpid(), i);
     process_create(proc_name, s_procs_completed_str, NULL);
