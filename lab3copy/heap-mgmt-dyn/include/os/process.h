@@ -56,6 +56,7 @@ typedef struct PCB {
   Link		*l;		// Used for keeping PCB in queues
   BuddyNode tree[NODE_COUNT]; // Buddy system tree for heap management
   int heapstartpage; // starting page number of heap
+  uint32 heapstartaddr; // starting virtual address of heap
   // AllocRecord allocs[NUM_MAX_HEAP_ALLOCS];
 } PCB;
 

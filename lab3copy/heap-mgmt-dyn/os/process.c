@@ -489,14 +489,17 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
       printf("FATAL ERROR: could not allocate heap page in ProcessFork!\n");
       exitsim();
     }
-  pcb->pagetable[4] = MemorySetupPte(heapPage);
-  dbprintf('a', "ProcessFork (%s): allocated heap page %d at virtual page 4\n",
-       name, heapPage);
-  /* Initialize buddy tree with virtual heap base (virtual page 4) */
-  BuddyInit(pcb->tree, (uint32)(4 * MEM_PAGESIZE));
-    /* number of user pages we allocated (4 code/data + 1 user stack + 1 heap) */
-  pcb->npages = 6;
-  pcb->heapstartpage = 4; // heap starts at virtual page 4 (virtual page index)
+    pcb->pagetable[4] = MemorySetupPte(heapPage);
+    dbprintf('a', "ProcessFork (%s): allocated heap page %d at virtual page 4\n",
+             name, heapPage);
+      /* Initialize buddy tree with virtual heap base (virtual page 4) */
+    BuddyInit(pcb->tree, (uint32)(4 * MEM_PAGESIZE));
+      /* number of user pages we allocated (4 code/data + 1 user stack + 1 heap) */
+    pcb->npages = 6;
+    pcb->heapstartpage = 4; // heap starts at virtual page 4 (virtual page index)
+    pcb->heapstartaddr = 4 * MEM_PAGESIZE; // heap starts at virtual address 0x4000
+    
+
 
     /* setup stackframe pointer to end of system stack (4-byte aligned) */
     // stackframe = ((uint32 *)(pcb->sysStackArea + MEM_PAGESIZE)) -
