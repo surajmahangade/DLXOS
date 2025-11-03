@@ -17,7 +17,7 @@ void main (int argc, char *argv[])
   // Now print a message to show that everything worked
   Printf("TRAP_ADDRESS (%d): Hello world! tmo\n", getpid());
 
-  p = (int*)(0x003dFFFD); // in range but not allocated
+  p = (int*)(2190100); // in range but not allocated
   Printf("TRAP_ADDRESS (%d): accessing address %d, size of int %d\n", getpid(), p, sizeof(int));
   x = *p;        // READ → should raise TRAP_ADDRESS (range)
   // print x

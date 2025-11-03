@@ -17,7 +17,7 @@ void main (int argc, char *argv[])
   // Now print a message to show that everything worked
   Printf("TRAP_ACCESS (%d): Hello world! tmo\n", getpid());
 
-  p = (int*)(0x003FFFFD); // out of range
+  p = (int*)(5190100); // out of range
   Printf("TRAP_ACCESS (%d): accessing address %d, size of int %d\n", getpid(), p, sizeof(int));
   x = *p;        // READ → should raise TRAP_ACCESS (range)
   // print x
