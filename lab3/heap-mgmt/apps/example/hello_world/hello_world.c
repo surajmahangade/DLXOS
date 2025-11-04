@@ -9,6 +9,7 @@ void main (int argc, char *argv[]) {
   void *gen[16]; int ng = 0;
   void *small[8]; int ns = 0;
   int i;
+  int result;
 
   if (argc != 2) { Printf("Usage: %s <sem>\n", argv[0]); Exit(); }
   s_procs_completed = dstrtol(argv[1], NULL, 10);
@@ -54,6 +55,12 @@ void main (int argc, char *argv[]) {
   mfree(small[0]); mfree(small[1]);
   Printf("hello_world (%d): free small[2] and small[3]\n", getpid());
   mfree(small[2]); mfree(small[3]);
+
+  // Test S5: null pointer free
+  Printf("\n-- S5: Free NULL pointer --\n");
+  result = mfree(NULL);
+  Printf("hello_world (%d): mfree(NULL) returned %d (expect -1)\n", getpid(), result);
+
 
   Printf("\n===== HEAP ALLOCATOR TESTS END =====\n", getpid());
 

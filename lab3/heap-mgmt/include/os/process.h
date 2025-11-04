@@ -35,6 +35,7 @@ typedef struct {
     NodeState state;
     int order;          // 0..MAX_ORDER
     uint32 addr;           // offset from heap base
+    int size;
 } BuddyNode;
 
 // typedef struct {

@@ -25,6 +25,7 @@ void BuddyInit(BuddyNode *tree, uint32 vaddress) {
     tree[0].order = MAX_ORDER;
     tree[0].addr = vaddress;
     tree[0].state = FREE;
+    tree[0].size = 0; 
 
     for (i = 1; i < NODE_COUNT; i++) {
         tree[i].state = FREE;
@@ -49,6 +50,7 @@ uint32 BuddyAlloc(PCB *pcb, int idx, int needed_order) {
     if (n->order == needed_order) {
     if (n->state == FREE) {
       n->state = USED;
+      n->size = 0;
       // Allocation success; actual user-visible allocation message
       // is printed from malloc() so we avoid duplicating it here.
       return n->addr;
@@ -534,6 +536,7 @@ void *malloc(PCB *pcb, int size) {
   uint32 vaddress;
   int needed_order = GetNeededOrder(size);
   int i;
+  int index;
   if (needed_order == -1) {
     ProcessKill();
     return 0;
@@ -546,6 +549,11 @@ void *malloc(PCB *pcb, int size) {
     ProcessKill();
     return 0;
   }
+  index = find_index_by_addr(pcb, vaddress);
+  if (index != -1) {
+      pcb->tree[index].size = size; // store actual requested size
+  }
+
   {
     int block_size = MIN_BLOCK_SIZE << needed_order;
     printf("Allocated the block: order = %d, addr = %d, requested mem size = %d, block size = %d\n",
@@ -581,6 +589,12 @@ void print_buddy_tree(PCB *pcb) {
 int mfree(PCB *pcb, void *ptr) {
   uint32 addr = (uint32)ptr;
   int order=-1, index =-1, i;
+  int actual_size;
+
+  if (ptr == NULL || ptr == 0) {
+    printf("Error: mfree called with NULL pointer\n");
+    return -1;
+  }
   dbprintf('m', "mfree: freeing memory at address %d\n", addr);
   // print_buddy_tree(pcb);
   index = find_index_by_addr(pcb, addr);
@@ -599,9 +613,10 @@ if (index == -1) {
   //         dbprintf('a', "AllocRecord idx=%d addr=%d order=%d used=%d\n",
   //                  i, pcb->allocs[i].addr, pcb->allocs[i].order, pcb->allocs[i].used);
   // }
-    ProcessKill();
     return -1;
   }
+
+  actual_size = pcb->tree[index].size;
 
   BuddyFree(pcb, index, addr);
   // print allocs info and buddy tree for debugging
@@ -616,5 +631,5 @@ if (index == -1) {
   //     }
   // }
   // return the freed block size
-  return (MIN_BLOCK_SIZE << pcb->tree[index].order);
+  return actual_size;
 }
