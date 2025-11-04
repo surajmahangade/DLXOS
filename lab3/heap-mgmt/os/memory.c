@@ -25,7 +25,6 @@ void BuddyInit(BuddyNode *tree, uint32 vaddress) {
     tree[0].order = MAX_ORDER;
     tree[0].addr = vaddress;
     tree[0].state = FREE;
-    tree[0].size = 0; 
 
     for (i = 1; i < NODE_COUNT; i++) {
         tree[i].state = FREE;
@@ -102,6 +101,7 @@ void merge(PCB *pcb, int idx) {
     BuddyNode *L;
     BuddyNode *R;
     BuddyNode *P;
+    
     // find parent
     if (idx == 0) {
       return;  // root has no parent
@@ -511,6 +511,7 @@ void MemoryFreePage(uint32 page) {
   nfreepages += 1;
   dbprintf ('m',"Freed page %d, %d remaining.\n", page, nfreepages);
 }
+
 int GetNeededOrder(int memsize) {
     int rounded_size, order;
     if (memsize <= 0) return -1;
@@ -536,22 +537,34 @@ void *malloc(PCB *pcb, int size) {
   uint32 vaddress;
   int needed_order = GetNeededOrder(size);
   int i;
-  int index;
+    
   if (needed_order == -1) {
     ProcessKill();
     return 0;
   }
+    
   dbprintf('m', "malloc: requesting allocation of size %d, needed order %d, max order %d\n",
            size, needed_order, MAX_ORDER);
+    
   vaddress = BuddyAlloc(pcb, 0, needed_order);
-  if (vaddress == 0){
+    if (vaddress == 0) {
     printf("Error: malloc failed to allocate %d bytes\n", size);
     ProcessKill();
     return 0;
   }
-  index = find_index_by_addr(pcb, vaddress);
-  if (index != -1) {
-      pcb->tree[index].size = size; // store actual requested size
+    
+    // Store size in separate allocation table
+    for (i = 0; i < MAX_ACTIVE_ALLOCATIONS; i++) {
+        if (!pcb->alloc_table[i].in_use) {
+            pcb->alloc_table[i].addr = vaddress;
+            pcb->alloc_table[i].size = size;
+            pcb->alloc_table[i].in_use = 1;
+            break;
+        }
+    }
+    
+    if (i == MAX_ACTIVE_ALLOCATIONS) {
+        printf("Warning: allocation table full, size tracking may be inaccurate\n");
   }
 
   {
@@ -588,15 +601,24 @@ void print_buddy_tree(PCB *pcb) {
 
 int mfree(PCB *pcb, void *ptr) {
   uint32 addr = (uint32)ptr;
-  int order=-1, index =-1, i;
-  int actual_size;
+    int index = -1, i;
+    int actual_size = 0;
 
   if (ptr == NULL || ptr == 0) {
     printf("Error: mfree called with NULL pointer\n");
     return -1;
   }
   dbprintf('m', "mfree: freeing memory at address %d\n", addr);
-  // print_buddy_tree(pcb);
+    
+    // Find and remove from allocation table
+    for (i = 0; i < MAX_ACTIVE_ALLOCATIONS; i++) {
+        if (pcb->alloc_table[i].in_use && pcb->alloc_table[i].addr == addr) {
+            actual_size = pcb->alloc_table[i].size;
+            pcb->alloc_table[i].in_use = 0;
+            break;
+        }
+    }
+    
   index = find_index_by_addr(pcb, addr);
 //   for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
 //     if (pcb->allocs[i].used &&
@@ -620,8 +642,8 @@ if (index == -1) {
 
   BuddyFree(pcb, index, addr);
   // print allocs info and buddy tree for debugging
-  dbprintf('m', "mfree: freed memory at address 0x%x of order %d from node index %d\n",
-           addr, order, index);
+  dbprintf('m', "mfree: freed memory at address 0x%x from node index %d\n",
+           addr, index);
   // print_buddy_tree(pcb);
   // print allocation records
   // for (i = 0; i < NUM_MAX_HEAP_ALLOCS; i++) {
