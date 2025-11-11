@@ -30,6 +30,8 @@
 #define	PROCESS_TYPE_SYSTEM	0x100
 #define	PROCESS_TYPE_USER	0x200
 
+#define MAX_ACTIVE_ALLOCATIONS 128  // Maximum concurrent allocations per process
+
 typedef	void (*VoidFunc)();
 typedef struct {
     NodeState state;
@@ -37,12 +39,12 @@ typedef struct {
     uint32 addr;           // offset from heap base
 } BuddyNode;
 
-// typedef struct {
-//     int addr;   // offset from heap base (or virtual address)
-//     int order;  // buddy order of the allocated block
-//     int used;   // 1 = active allocation, 0 = free slot
-//     int index;
-// } AllocRecord;
+typedef struct {
+    uint32 addr;
+    uint32 size;
+    unsigned char in_use;
+} AllocInfo;
+
 
 // Process control block
 typedef struct PCB {
@@ -57,7 +59,7 @@ typedef struct PCB {
   BuddyNode tree[NODE_COUNT]; // Buddy system tree for heap management
   int heapstartpage; // starting page number of heap
   uint32 heapstartaddr; // starting virtual address of heap
-  // AllocRecord allocs[NUM_MAX_HEAP_ALLOCS];
+  AllocInfo alloc_table[MAX_ACTIVE_ALLOCATIONS];
 } PCB;
 
 extern PCB	*currentPCB;

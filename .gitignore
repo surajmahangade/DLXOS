@@ -43,3 +43,5 @@ kernel/*.map
 *.lst
 */bin
 settings.json
+bin/*
+bin/

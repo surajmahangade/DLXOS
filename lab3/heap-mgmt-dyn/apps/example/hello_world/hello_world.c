@@ -17,6 +17,7 @@ void main (int argc, char *argv[]) {
   void *p4k=NULL, *p8k=NULL, *p12k=NULL, *p16k=NULL, *p64k=NULL;
   void *a,*b,*c,*d,*x1,*x2;
   void *small[8]; int ns=0;
+  int result;
   int i;
 
   if (argc != 2) { Printf("Usage: %s <sem>\n", argv[0]); Exit(); }
@@ -73,6 +74,11 @@ void main (int argc, char *argv[]) {
   }
   mfree(small[0]); mfree(small[1]);
   mfree(small[2]); mfree(small[3]);
+
+  // D5: null pointer free
+  Printf("\n-- D5: Free NULL pointer --\n");
+  result = mfree(NULL);
+  Printf("hello_world (%d): mfree(NULL) returned %d (expect -1)\n", getpid(), result);
 
   Printf("\n===== DYNAMIC HEAP TESTS (64KB cap) END =====\n", getpid());
 
