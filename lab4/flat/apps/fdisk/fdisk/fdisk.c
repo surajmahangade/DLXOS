@@ -113,12 +113,10 @@ int FdiskWriteBlock(uint32 blocknum, dfs_block *b) {
   int fs_block_size = DFS_BLOCKSIZE;
   int phys_blocks_per_fs = fs_block_size / phys_block_size;
   int i;
-  disk_block phys_block;
-  
-  // Write each physical block that makes up this filesystem block
   for (i = 0; i < phys_blocks_per_fs; i++) {
-    bcopy(b->data + (i * phys_block_size), phys_block.data, phys_block_size);
-    if (disk_write_block(blocknum * phys_blocks_per_fs + i, &phys_block) == DISK_FAIL) {
+    if (disk_write_block(blocknum * phys_blocks_per_fs + i, 
+                         &b->data[i * phys_block_size]) == DISK_FAIL) {
+      Printf("fdisk (%d): ERROR writing block %d (part %d)\n", getpid(), blocknum, i);
       return DISK_FAIL;
     }
   }
