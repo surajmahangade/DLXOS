@@ -12,7 +12,7 @@ typedef struct dfs_superblock {
 } dfs_superblock;
 
 #define DFS_BLOCKSIZE 1024  // Must be an integer multiple of the disk blocksize
-#define DFS_MAX_FILENAME_LENGTH 68 
+#define DFS_MAX_FILENAME_LENGTH 72 
 
 typedef struct dfs_block {
   char data[DFS_BLOCKSIZE];

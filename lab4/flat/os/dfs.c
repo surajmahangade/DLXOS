@@ -125,7 +125,7 @@ int DfsOpenFileSystem() {
 // Invalidate disk copy
   sb.valid = 0;
   bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
-  if (DfsWriteBlock(1, &dfs_blk) == DFS_FAIL) {
+  if (DiskWriteBlock(4, &dfs_blk) == DFS_FAIL) { // physical block 4
     printf("DfsOpenFileSystem: Failed to invalidate disk superblock\n");
     return DFS_FAIL;
   }
@@ -181,7 +181,7 @@ int DfsCloseFileSystem() {
   // Write valid superblock last
   sb.valid = 1;
   bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
-  if (DfsWriteBlock(1, &dfs_blk) == DFS_FAIL) {
+  if (DiskWriteBlock(4, &dfs_blk) == DFS_FAIL) { // physical block 4
     printf("DfsCloseFileSystem: Failed to write superblock\n");
     return DFS_FAIL;
   }
@@ -361,6 +361,33 @@ uint32 DfsInodeFilenameExists(char *filename) {
 }
 
 
+// creating rename function
+
+int DfsInodeRename(uint32 handle, char *newname) {
+  if (!dfs_open) {
+    return DFS_FAIL;
+  }
+  
+  if (handle >= sb.num_inodes) {
+    return DFS_FAIL;
+  }
+  
+  if (!inodes[handle].inuse) {
+    return DFS_FAIL;
+  }
+  
+  // Check if new name already exists
+  if (DfsInodeFilenameExists(newname) != DFS_FAIL) {
+    return DFS_FAIL;  // New name already in use
+  }
+  
+  // Copy new name to inode
+  dstrncpy(inodes[handle].filename, newname, DFS_MAX_FILENAME_LENGTH);
+  
+  return DFS_SUCCESS;
+}
+
+
 //-----------------------------------------------------------------
 // DfsInodeOpen: search the list of all inuse inodes for the 
 // specified filename. If the filename exists, return the handle 
@@ -371,6 +398,7 @@ uint32 DfsInodeFilenameExists(char *filename) {
 
 uint32 DfsInodeOpen(char *filename) {
   int i;
+  int j;
   uint32 handle;
   
   if (!dfs_open) {
@@ -393,7 +421,7 @@ uint32 DfsInodeOpen(char *filename) {
       inodes[i].inuse = 1;
       inodes[i].filesize = 0;
       dstrncpy(inodes[i].filename, filename, 44);
-      for (int j = 0; j < 10; j++) {
+      for (j = 0; j < 10; j++) {
         inodes[i].direct[j] = 0;
       }
       inodes[i].indirect = 0;
@@ -418,6 +446,7 @@ uint32 DfsInodeOpen(char *filename) {
 
 int DfsInodeDelete(uint32 handle) {
   int i;
+  int j;
   dfs_block blk;
   uint32 *indirect_table;
   uint32 *double_indirect_table;
@@ -461,7 +490,7 @@ int DfsInodeDelete(uint32 handle) {
         indirect_block = double_indirect_table[i];
         DfsReadBlock(indirect_block, &blk);
         indirect_table = (uint32*)blk.data;
-        for (int j = 0; j < (sb.blocksize / sizeof(uint32)); j++) {
+        for (j = 0; j < (sb.blocksize / sizeof(uint32)); j++) {
           if (indirect_table[j] != 0) {
             DfsFreeBlock(indirect_table[j]);
           }
