@@ -6,16 +6,27 @@
 
 #define DFS_CACHE_NUM_SLOTS 128
 
+#define PATTERN_WINDOW_SIZE 32
+
+typedef enum {
+  PATTERN_UNKNOWN = 0,
+  PATTERN_SEQUENTIAL,
+  PATTERN_RANDOM,
+  PATTERN_LOOPING,
+  PATTERN_TEMPORAL
+} AccessPattern;
+
 
 // the original uncached DFS functions
 int DfsReadBlockUncached(uint32 blocknum, dfs_block *b);
 int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b);
 
 
-//cache functions
-int DfsCacheHit(int blocknum);
-int DfsCacheAllocateSlot(int blocknum);
-int DfsCacheFlush();
+//cache functions adaptive
+int DfsAdaptiveCacheHit(int blocknum);
+int DfsAdaptiveCacheAllocateSlot(int blocknum);
+int DfsAdaptiveCacheFlush();
+void DetectAccessPattern(uint32 blocknum);
 
 // int DfsReadBlock(uint32 blocknum, dfs_block *b);
 // int DfsWriteBlock(uint32 blocknum, dfs_block *b);
