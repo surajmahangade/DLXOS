@@ -3,8 +3,22 @@
 
 #include "dfs_shared.h"
 
-int DfsReadBlock(uint32 blocknum, dfs_block *b);
-int DfsWriteBlock(uint32 blocknum, dfs_block *b);
+
+#define DFS_CACHE_NUM_SLOTS 128
+
+
+// the original uncached DFS functions
+int DfsReadBlockUncached(uint32 blocknum, dfs_block *b);
+int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b);
+
+
+//cache functions
+int DfsCacheHit(int blocknum);
+int DfsCacheAllocateSlot(int blocknum);
+int DfsCacheFlush();
+
+// int DfsReadBlock(uint32 blocknum, dfs_block *b);
+// int DfsWriteBlock(uint32 blocknum, dfs_block *b);
 int DfsOpenFileSystem();
 int DfsCloseFileSystem();
 int DfsInodeReadBytes(uint32 handle, void *mem, int start_byte, int num_bytes);
