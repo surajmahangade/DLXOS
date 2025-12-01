@@ -234,7 +234,6 @@ int DfsOpenFileSystem() {
 // filesystem metadata to the disk, and invalidates the memory's 
 // version.
 //-------------------------------------------------------------------
-
 int DfsCloseFileSystem() {
   dfs_block dfs_blk;
   disk_block disk_blk;
@@ -245,13 +244,13 @@ int DfsCloseFileSystem() {
     return DFS_FAIL;
   }
   
-  // Flush cache first
+  // Flush cache FIRST
   if (DfsCacheFlush() == DFS_FAIL) {
     printf("DfsCloseFileSystem: Failed to flush cache\n");
-    return DFS_FAIL;
+    // Continue anyway to try to save metadata
   }
   
-  // Write inodes back
+  // Write inodes back using DIRECT disk writes (not cached)
   for (i = 0; i < (sb.num_inodes * sizeof(dfs_inode) / sb.blocksize); i++) {
     bcopy((char*)(inodes + i * (sb.blocksize / sizeof(dfs_inode))),
           dfs_blk.data, sb.blocksize);
@@ -264,7 +263,7 @@ int DfsCloseFileSystem() {
     }
   }
   
-  // Write FBV back
+  // Write FBV back using DIRECT disk writes
   for (i = 0; i < (sb.num_blocks / (sb.blocksize * 8)); i++) {
     bcopy((char*)(fbv + i * (sb.blocksize / sizeof(uint32))),
           dfs_blk.data, sb.blocksize);
@@ -277,7 +276,7 @@ int DfsCloseFileSystem() {
     }
   }
   
-  // Write superblock to DFS block 1
+  // Write superblock to DFS block 1 (MOST IMPORTANT!)
   sb.valid = 1;
   bzero(dfs_blk.data, sb.blocksize);
   bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
@@ -301,8 +300,6 @@ int DfsCloseFileSystem() {
   dfs_open = 0;
   return DFS_SUCCESS;
 }
-
-
 
 //-----------------------------------------------------------------
 // DfsAllocateBlock allocates a DFS block for use. Remember to use 
@@ -1092,7 +1089,7 @@ int DfsCacheFlush() {
       }
       cache[i].dirty = 0;
     }
-    cache[i].valid = 0;  // Clear all slots
+    cache[i].valid = 0;  // Invalidate all cache entries
   }
   
   LockHandleRelease(cache_lock);
