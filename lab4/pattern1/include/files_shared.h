@@ -14,10 +14,10 @@ typedef struct file_descriptor {
   // STUDENT: put file descriptor info here
   char filename[FILE_MAX_FILENAME_LENGTH];
   int inuse;
-  uint32 inode; // inode handle
+  unsigned int inode; // inode handle
   int eof;
   char mode[2]; // 'r', 'w', 'a'
-  uint32 current_pos;
+  unsigned int current_pos;
   int pid;
 } file_descriptor;
 
