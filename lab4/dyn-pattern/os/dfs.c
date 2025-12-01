@@ -1247,7 +1247,7 @@ uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum)
 //-----------------------------------------------------------------
 
 
-int DfsCacheHit(int blocknum) {
+int DfsAdaptiveCacheHit(int blocknum) {
   int i;
   
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
@@ -1260,7 +1260,7 @@ int DfsCacheHit(int blocknum) {
 }
 
 
-int DfsCacheAllocateSlot(int blocknum) {
+int DfsAdaptiveCacheAllocateSlot(int blocknum) {
   int i;
   int lru_slot = 0;
   uint32 lru_time = adaptive_cache[0].timestamp;
@@ -1300,7 +1300,7 @@ int DfsCacheAllocateSlot(int blocknum) {
   return lru_slot;
 }
 
-int DfsCacheFlush() {
+int DfsAdaptiveCacheFlush() {
   int i;
   
   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) {

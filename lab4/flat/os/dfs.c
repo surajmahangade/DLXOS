@@ -7,15 +7,13 @@
 #include "synch.h"
 
 // Additional cache metadata
-typedef struct adaptive_cache_entry {
-  int valid;
-  int dirty;
-  uint32 blocknum;
-  dfs_block data;
-  uint32 timestamp;
-  uint32 access_count;      // How many times accessed
-  int reference_bit;         // For clock algorithm
-} adaptive_cache_entry;
+typedef struct cache_entry {
+  int valid;           // Is this slot occupied?
+  int dirty;           // Has block been modified?
+  uint32 blocknum;     // Which DFS block is cached here
+  dfs_block data;      // The actual data
+  uint32 timestamp;    // For LRU replacement (or access count)
+} cache_entry;
 
 
 
@@ -35,17 +33,9 @@ static lock_t cache_lock; // Lock for cache operations
 
 
 
-static uint32 access_history[PATTERN_WINDOW_SIZE];
-static int history_index = 0;
+static cache_entry cache[DFS_CACHE_NUM_SLOTS];
+static uint32 cache_clock = 0; // For LRU timestamping
 
-
-// Global adaptive state
-static adaptive_cache_entry adaptive_cache[DFS_CACHE_NUM_SLOTS];
-static AccessPattern current_pattern = PATTERN_UNKNOWN;
-static uint32 last_accessed_block = 0;
-static int sequential_count = 0;
-static int random_count = 0;
-static int loop_detected = 0;
 
 
 
@@ -104,6 +94,9 @@ static uint32 GetCurrentTime() {
 //-----------------------------------------------------------------
 
 void DfsModuleInit() {
+
+// You essentially set the file system as invalid and then open 
+// using DfsOpenFileSystem().
   int i;
   
   fbv_lock = LockCreate();
@@ -113,232 +106,23 @@ void DfsModuleInit() {
   
   // Initialize adaptive cache
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    adaptive_cache[i].valid = 0;
-    adaptive_cache[i].dirty = 0;
-    adaptive_cache[i].blocknum = 0;
-    adaptive_cache[i].timestamp = 0;
-    adaptive_cache[i].access_count = 0;
-    adaptive_cache[i].reference_bit = 0;
+    cache[i].valid = 0;
+    cache[i].dirty = 0;
+    cache[i].blocknum = 0;
+    cache[i].timestamp = 0;
   }
-  
-  for (i = 0; i < PATTERN_WINDOW_SIZE; i++) {
-    access_history[i] = 0;
-  }
-  
-  current_pattern = PATTERN_UNKNOWN;
-  sequential_count = 0;
-  random_count = 0;
-  loop_detected = 0;
-  last_accessed_block = 0;
-  history_index = 0;
+
   
   cache_hits = 0;
   cache_misses = 0;
   disk_reads = 0;
   disk_writes = 0;
+  total_miss_latency = 0;
   cache_clock = 0;
   
   if (DfsOpenFileSystem() == DFS_FAIL) {
     printf("DfsModuleInit: Failed to open filesystem\n");
   }
-}
-
-void DetectAccessPattern(uint32 blocknum) {
-  int i, j;
-  int sequential_streak = 0;
-  int loop_count = 0;
-  int unique_blocks = 0;
-  
-  // Add to history
-  access_history[history_index] = blocknum;
-  history_index = (history_index + 1) % PATTERN_WINDOW_SIZE;
-  
-  // Detect sequential access
-  if (blocknum == last_accessed_block + 1 || blocknum == last_accessed_block - 1) {
-    sequential_count++;
-    random_count = 0;
-  } else if (blocknum != last_accessed_block) {
-    random_count++;
-    if (random_count > 5) {
-      sequential_count = 0;
-    }
-  }
-  
-  last_accessed_block = blocknum;
-  
-  // Analyze access history every PATTERN_WINDOW_SIZE accesses
-  if (cache_clock % PATTERN_WINDOW_SIZE == 0 && cache_clock > 0) {
-    // Count sequential accesses in history
-    for (i = 1; i < PATTERN_WINDOW_SIZE; i++) {
-      if (access_history[i] == access_history[i-1] + 1 || 
-          access_history[i] == access_history[i-1] - 1) {
-        sequential_streak++;
-      }
-    }
-    
-    // Count unique blocks (for working set size)
-    unique_blocks = 0;
-    for (i = 0; i < PATTERN_WINDOW_SIZE; i++) {
-      int is_unique = 1;
-      for (j = 0; j < i; j++) {
-        if (access_history[i] == access_history[j]) {
-          is_unique = 0;
-          break;
-        }
-      }
-      if (is_unique) unique_blocks++;
-    }
-    
-    // Detect loops (same block accessed multiple times)
-    for (i = 0; i < PATTERN_WINDOW_SIZE; i++) {
-      for (j = i + 1; j < PATTERN_WINDOW_SIZE; j++) {
-        if (access_history[i] == access_history[j]) {
-          loop_count++;
-        }
-      }
-    }
-    
-    // Determine pattern
-    if (sequential_streak > PATTERN_WINDOW_SIZE * 0.7) {
-      current_pattern = PATTERN_SEQUENTIAL;
-      printf("Pattern Detected: SEQUENTIAL\n");
-    } else if (loop_count > PATTERN_WINDOW_SIZE * 0.3) {
-      current_pattern = PATTERN_LOOPING;
-      printf("Pattern Detected: LOOPING\n");
-    } else if (unique_blocks < PATTERN_WINDOW_SIZE * 0.3) {
-      current_pattern = PATTERN_TEMPORAL;
-      printf("Pattern Detected: TEMPORAL (small working set)\n");
-    } else {
-      current_pattern = PATTERN_RANDOM;
-      printf("Pattern Detected: RANDOM\n");
-    }
-  }
-}
-// Adaptive cache hit check
-int DfsAdaptiveCacheHit(int blocknum) {
-  int i;
-  
-  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].valid && adaptive_cache[i].blocknum == blocknum) {
-      adaptive_cache[i].access_count++;
-      adaptive_cache[i].reference_bit = 1;  // For clock algorithm
-      return i;
-    }
-  }
-  
-  return DFS_FAIL;
-}
-
-// Adaptive cache allocation with pattern-aware replacement
-int DfsAdaptiveCacheAllocateSlot(int blocknum) {
-  int i;
-  static int clock_hand = 0;  // For clock algorithm
-  int evict_slot = -1;
-  
-  // First, look for empty slot
-  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (!adaptive_cache[i].valid) {
-      adaptive_cache[i].valid = 1;
-      adaptive_cache[i].dirty = 0;
-      adaptive_cache[i].blocknum = blocknum;
-      adaptive_cache[i].timestamp = cache_clock++;
-      adaptive_cache[i].access_count = 0;
-      adaptive_cache[i].reference_bit = 1;
-      return i;
-    }
-  }
-  
-  // Choose replacement policy based on detected pattern
-  switch (current_pattern) {
-    case PATTERN_SEQUENTIAL:
-      // Use FIFO for sequential access
-      evict_slot = clock_hand;
-      clock_hand = (clock_hand + 1) % DFS_CACHE_NUM_SLOTS;
-      break;
-      
-    case PATTERN_LOOPING:
-      // Use MRU for looping patterns
-      {
-        uint32 max_time = 0;
-        for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-          if (adaptive_cache[i].timestamp > max_time) {
-            max_time = adaptive_cache[i].timestamp;
-            evict_slot = i;
-          }
-        }
-      }
-      break;
-      
-    case PATTERN_TEMPORAL:
-      // Use LRU for temporal locality
-      {
-        uint32 min_time = adaptive_cache[0].timestamp;
-        evict_slot = 0;
-        for (i = 1; i < DFS_CACHE_NUM_SLOTS; i++) {
-          if (adaptive_cache[i].timestamp < min_time) {
-            min_time = adaptive_cache[i].timestamp;
-            evict_slot = i;
-          }
-        }
-      }
-      break;
-      
-    case PATTERN_RANDOM:
-    case PATTERN_UNKNOWN:
-    default:
-      // Use Clock (Second Chance) algorithm as default
-      while (1) {
-        if (adaptive_cache[clock_hand].reference_bit == 0) {
-          evict_slot = clock_hand;
-          clock_hand = (clock_hand + 1) % DFS_CACHE_NUM_SLOTS;
-          break;
-        }
-        adaptive_cache[clock_hand].reference_bit = 0;  // Give second chance
-        clock_hand = (clock_hand + 1) % DFS_CACHE_NUM_SLOTS;
-      }
-      break;
-  }
-  
-  // Evict chosen slot
-  if (adaptive_cache[evict_slot].dirty) {
-    if (DfsWriteBlockUncached(adaptive_cache[evict_slot].blocknum, 
-                               &adaptive_cache[evict_slot].data) == DFS_FAIL) {
-      return DFS_FAIL;
-    }
-  }
-  
-  adaptive_cache[evict_slot].valid = 1;
-  adaptive_cache[evict_slot].dirty = 0;
-  adaptive_cache[evict_slot].blocknum = blocknum;
-  adaptive_cache[evict_slot].timestamp = cache_clock++;
-  adaptive_cache[evict_slot].access_count = 0;
-  adaptive_cache[evict_slot].reference_bit = 1;
-  
-  return evict_slot;
-}
-
-// Adaptive cache flush
-int DfsAdaptiveCacheFlush() {
-  int i;
-  
-  if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) {
-    return DFS_FAIL;
-  }
-  
-  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
-      if (DfsWriteBlockUncached(adaptive_cache[i].blocknum, 
-                                 &adaptive_cache[i].data) == DFS_FAIL) {
-        LockHandleRelease(cache_lock);
-        return DFS_FAIL;
-      }
-      adaptive_cache[i].dirty = 0;
-    }
-    adaptive_cache[i].valid = 0;
-  }
-  
-  LockHandleRelease(cache_lock);
-  return DFS_SUCCESS;
 }
 
 
@@ -632,17 +416,14 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
     return DFS_FAIL;
   }
   
-  // Detect access pattern
-  DetectAccessPattern(blocknum);
-  
   // Check for cache hit
-  slot = DfsAdaptiveCacheHit(blocknum);
+  slot = DfsCacheHit(blocknum);
   
   if (slot != DFS_FAIL) {
     // Cache HIT
     cache_hits++;
-    adaptive_cache[slot].timestamp = cache_clock++;
-    bcopy(adaptive_cache[slot].data.data, b->data, sb.blocksize);
+    cache[slot].timestamp = cache_clock++;
+    bcopy(cache[slot].data.data, b->data, sb.blocksize);
     LockHandleRelease(cache_lock);
     return sb.blocksize;
   }
@@ -651,16 +432,16 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   cache_misses++;
   start_time = GetCurrentTime();
   
-  // Allocate cache slot using adaptive algorithm
-  slot = DfsAdaptiveCacheAllocateSlot(blocknum);
+  // Allocate cache slot 
+  slot = DfsCacheAllocateSlot(blocknum);
   if (slot == DFS_FAIL) {
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
   
   // Read from disk
-  if (DfsReadBlockUncached(blocknum, &adaptive_cache[slot].data) == DFS_FAIL) {
-    adaptive_cache[slot].valid = 0;
+  if (DfsReadBlockUncached(blocknum, &cache[slot].data) == DFS_FAIL) {
+    cache[slot].valid = 0;
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
@@ -670,15 +451,15 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   total_miss_latency += latency;
   
   // Copy to user buffer
-  bcopy(adaptive_cache[slot].data.data, b->data, sb.blocksize);
+  bcopy(cache[slot].data.data, b->data, sb.blocksize);
   
   // Print statistics
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
   miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
-  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms, Pattern = %d\n",
+  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
          hit_rate, miss_rate, disk_reads, disk_writes, 
-         total_miss_latency / cache_misses, current_pattern);
+         total_miss_latency / cache_misses);
   
   LockHandleRelease(cache_lock);
   return sb.blocksize;
@@ -732,18 +513,15 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   }
   
   printf("DfsWriteBlock: Writing block %d\n", blocknum);
-  // Detect access pattern
-  DetectAccessPattern(blocknum);
-  
   // Check for cache hit
-  slot = DfsAdaptiveCacheHit(blocknum);
+  slot = DfsCacheHit(blocknum);
   printf("DfsWriteBlock: Cache slot = %d\n", slot);
   if (slot != DFS_FAIL) {
     // Cache HIT
     cache_hits++;
-    adaptive_cache[slot].timestamp = cache_clock++;
-    bcopy(b->data, adaptive_cache[slot].data.data, sb.blocksize);
-    adaptive_cache[slot].dirty = 1;
+    cache[slot].timestamp = cache_clock++;
+    bcopy(b->data, cache[slot].data.data, sb.blocksize);
+    cache[slot].dirty = 1;
     LockHandleRelease(cache_lock);
     return sb.blocksize;
   }
@@ -754,7 +532,7 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   start_time = GetCurrentTime();
   
   // Allocate cache slot
-  slot = DfsAdaptiveCacheAllocateSlot(blocknum);
+  slot = DfsCacheAllocateSlot(blocknum);
   printf("DfsWriteBlock: Allocated cache slot %d for block %d\n", slot, blocknum);
   if (slot == DFS_FAIL) {
     LockHandleRelease(cache_lock);
@@ -763,8 +541,8 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   printf("DfsWriteBlock: Reading block %d into cache slot %d\n", blocknum, slot);
   
   // Read existing data first
-  if (DfsReadBlockUncached(blocknum, &adaptive_cache[slot].data) == DFS_FAIL) {
-    adaptive_cache[slot].valid = 0;
+  if (DfsReadBlockUncached(blocknum, &cache[slot].data) == DFS_FAIL) {
+    cache[slot].valid = 0;
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
@@ -776,16 +554,16 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   
   printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
   // Update cache
-  bcopy(b->data, adaptive_cache[slot].data.data, sb.blocksize);
+  bcopy(b->data, cache[slot].data.data, sb.blocksize);
   adaptive_cache[slot].dirty = 1;
   
   // Print statistics
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
   miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
-  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms, Pattern = %d\n",
+  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
          hit_rate, miss_rate, disk_reads, disk_writes,
-         total_miss_latency / cache_misses, current_pattern);
+         total_miss_latency / cache_misses);
   
   LockHandleRelease(cache_lock);
   return sb.blocksize;
@@ -1263,39 +1041,39 @@ int DfsCacheHit(int blocknum) {
 int DfsCacheAllocateSlot(int blocknum) {
   int i;
   int lru_slot = 0;
-  uint32 lru_time = adaptive_cache[0].timestamp;
+  uint32 lru_time = cache[0].timestamp;
   
   // First, look for empty slot
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (!adaptive_cache[i].valid) {
-      adaptive_cache[i].valid = 1;
-      adaptive_cache[i].dirty = 0;
-      adaptive_cache[i].blocknum = blocknum;
-      adaptive_cache[i].timestamp = cache_clock++;
+    if (!cache[i].valid) {
+      cache[i].valid = 1;
+      cache[i].dirty = 0;
+      cache[i].blocknum = blocknum;
+      cache[i].timestamp = cache_clock++;
       return i;
     }
   }
   
   // No empty slot, find LRU (Least Recently Used)
   for (i = 1; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].timestamp < lru_time) {
-      lru_time = adaptive_cache[i].timestamp;
+    if (cache[i].timestamp < lru_time) {
+      lru_time = cache[i].timestamp;
       lru_slot = i;
     }
   }
   
   // Evict LRU slot - write back if dirty
-  if (adaptive_cache[lru_slot].dirty) {
-    if (DfsWriteBlockUncached(adaptive_cache[lru_slot].blocknum, &adaptive_cache[lru_slot].data) == DFS_FAIL) {
+  if (cache[lru_slot].dirty) {
+    if (DfsWriteBlockUncached(cache[lru_slot].blocknum, &cache[lru_slot].data) == DFS_FAIL) {
       return DFS_FAIL;
     }
   }
   
   // Allocate this slot
-  adaptive_cache[lru_slot].valid = 1;
-  adaptive_cache[lru_slot].dirty = 0;
-  adaptive_cache[lru_slot].blocknum = blocknum;
-  adaptive_cache[lru_slot].timestamp = cache_clock++;
+  cache[lru_slot].valid = 1;
+  cache[lru_slot].dirty = 0;
+  cache[lru_slot].blocknum = blocknum;
+  cache[lru_slot].timestamp = cache_clock++;
   
   return lru_slot;
 }
@@ -1308,14 +1086,14 @@ int DfsCacheFlush() {
   }
   
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
-      if (DfsWriteBlockUncached(adaptive_cache[i].blocknum, &adaptive_cache[i].data) == DFS_FAIL) {
+    if (cache[i].valid && cache[i].dirty) {
+      if (DfsWriteBlockUncached(cache[i].blocknum, &cache[i].data) == DFS_FAIL) {
         LockHandleRelease(cache_lock);
         return DFS_FAIL;
       }
-      adaptive_cache[i].dirty = 0;
+      cache[i].dirty = 0;
     }
-    adaptive_cache[i].valid = 0;  // Clear all slots
+    cache[i].valid = 0;  // Clear all slots
   }
   
   LockHandleRelease(cache_lock);
