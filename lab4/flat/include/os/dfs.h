@@ -44,7 +44,7 @@ uint32 DfsInodeFilenameExists(char *filename);
 uint32 DfsAllocateBlock();
 int DfsFreeBlock(uint32 blocknum);
 void DfsModuleInit();
-void DfsInvalidate()
+void DfsInvalidate();
 
 
 
