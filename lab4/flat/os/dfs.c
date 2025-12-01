@@ -62,21 +62,31 @@ inline int min(int a, int b) {
 //-----------------------------------------------------------------
 // Helper function to sleep for specified milliseconds
 //-----------------------------------------------------------------
-static void sleep_ms(int milliseconds) {
-  int start_jiffies;
-  int sleep_jiffies;
-  EnableIntrs();
-  start_jiffies = ClkGetCurJiffies();
-  sleep_jiffies = (milliseconds * 1000) / ClkGetResolution(); // Convert ms to jiffies
+// static void sleep_ms(int milliseconds) {
+//   int start_jiffies;
+//   int sleep_jiffies;
+//   EnableIntrs();
+//   start_jiffies = ClkGetCurJiffies();
+//   sleep_jiffies = (milliseconds * 1000) / ClkGetResolution(); // Convert ms to jiffies
   
-  // Busy wait (simple implementation)
-  while ((ClkGetCurJiffies() - start_jiffies) < sleep_jiffies) {
-    // Just wait
-    // print sleep ClkGetCurJiffies() - start_jiffies;
-    // printf("current jiffies: %d\n", ClkGetCurJiffies() - start_jiffies);
+//   // Busy wait (simple implementation)
+//   while ((ClkGetCurJiffies() - start_jiffies) < sleep_jiffies) {
+//     // Just wait
+//     // print sleep ClkGetCurJiffies() - start_jiffies;
+//     // printf("current jiffies: %d\n", ClkGetCurJiffies() - start_jiffies);
 
+//   }
+//   DisableIntrs();
+// }
+static void sleep_ms(int milliseconds) {
+  // Fallback latency simulation without relying on interrupts or yields.
+  // We simply burn cycles proportional to milliseconds.
+  // Note: This does not advance jiffies; we only use it to emulate disk delay.
+  volatile uint32 i;
+  uint32 loops = milliseconds * 5000; // tuned constant; adjust if too fast/slow
+  for (i = 0; i < loops; i++) {
+    // busy work
   }
-  DisableIntrs();
 }
 
 //-----------------------------------------------------------------
@@ -481,6 +491,7 @@ int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b) {
   }
   
   for (i = 0; i < phys_blocks_per_fs; i++) {
+    // printf("DfsWriteBlockUncached: Writing physical block %d\n", blocknum * phys_blocks_per_fs + i);
     // Add 5ms delay to simulate disk latency
     sleep_ms(5);
     
@@ -488,6 +499,7 @@ int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b) {
     if (DiskWriteBlock(blocknum * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
       return DFS_FAIL;
     }
+    // printf("DfsWriteBlockUncached: Wrote physical block %d\n", blocknum * phys_blocks_per_fs + i);
   }
   
   disk_writes++;
@@ -1080,10 +1092,12 @@ int DfsCacheFlush() {
   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) {
     return DFS_FAIL;
   }
+  // printf("DfsCacheFlush: Flushing cache DFS_CACHE_NUM_SLOTS=%d\n", DFS_CACHE_NUM_SLOTS);
   
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
     if (cache[i].valid && cache[i].dirty) {
       if (DfsWriteBlockUncached(cache[i].blocknum, &cache[i].data) == DFS_FAIL) {
+        // printf("DfsCacheFlush: Failed to write back dirty block %d\n", cache[i].blocknum);
         LockHandleRelease(cache_lock);
         return DFS_FAIL;
       }
@@ -1091,7 +1105,7 @@ int DfsCacheFlush() {
     }
     cache[i].valid = 0;  // Invalidate all cache entries
   }
-  
+  // printf("DfsCacheFlush: Cache flushed successfully\n");
   LockHandleRelease(cache_lock);
   return DFS_SUCCESS;
 }
