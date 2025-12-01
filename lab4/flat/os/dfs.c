@@ -747,7 +747,8 @@ uint32 DfsInodeFilenameExists(char *filename) {
   }
   
   for (i = 0; i < sb.num_inodes; i++) {
-    if (inodes[i].inuse && dstrncmp(inodes[i].filename, filename, 44) == 0) {
+    // 44 = DFS_MAX_FILENAME_LENGTH
+    if (inodes[i].inuse && dstrncmp(inodes[i].filename, filename, DFS_MAX_FILENAME_LENGTH) == 0) {
       return i;
     }
   }
@@ -815,7 +816,8 @@ uint32 DfsInodeOpen(char *filename) {
     if (!inodes[i].inuse) {
       inodes[i].inuse = 1;
       inodes[i].filesize = 0;
-      dstrncpy(inodes[i].filename, filename, 44);
+      // 44 = DFS_MAX_FILENAME_LENGTH
+      dstrncpy(inodes[i].filename, filename, DFS_MAX_FILENAME_LENGTH);
       for (j = 0; j < 10; j++) {
         inodes[i].direct[j] = 0;
       }
@@ -1045,6 +1047,11 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
   uint32 indirect_block;
   int entries_per_block = sb.blocksize / sizeof(uint32);
   
+  // recheck this
+  uint32 max_blocks = 10 + entries_per_block + entries_per_block * entries_per_block;
+  if (virtual_blocknum >= max_blocks) return DFS_FAIL;
+  // end recheck 
+
   if (!dfs_open || handle >= sb.num_inodes || !inodes[handle].inuse) {
     return DFS_FAIL;
   }
@@ -1127,7 +1134,11 @@ uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum)
   uint32 *table;
   uint32 indirect_block;
   int entries_per_block = sb.blocksize / sizeof(uint32);
-  
+  // recheck this
+  uint32 max_blocks = 10 + entries_per_block + entries_per_block * entries_per_block;
+  if (virtual_blocknum >= max_blocks) return DFS_FAIL;
+  // end recheck
+
   if (!dfs_open || handle >= sb.num_inodes || !inodes[handle].inuse) {
     return DFS_FAIL;
   }
@@ -1246,4 +1257,22 @@ int DfsCacheFlush() {
   LockHandleRelease(cache_lock);
   return DFS_SUCCESS;
 }
+
+// int DfsCacheFlush() {
+//   int i;
+//   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) return DFS_FAIL;
+//   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
+//     if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
+//       if (DfsWriteBlockUncached(adaptive_cache[i].blocknum,
+//                                 &adaptive_cache[i].data) == DFS_FAIL) {
+//         LockHandleRelease(cache_lock);
+//         return DFS_FAIL;
+//       }
+//       adaptive_cache[i].dirty = 0;
+//     }
+//     adaptive_cache[i].valid = 0;
+//   }
+//   LockHandleRelease(cache_lock);
+//   return DFS_SUCCESS;
+// }
 
