@@ -80,7 +80,7 @@ static void sleep_ms(int milliseconds) {
   // Busy wait (simple implementation)
   while ((ClkGetCurJiffies() - start_jiffies) < sleep_jiffies) {
     // Just wait
-    
+
   }
 }
 
@@ -361,61 +361,77 @@ void DfsInvalidate() {
 int DfsOpenFileSystem() {
   disk_block disk_blk;
   dfs_block dfs_blk;
-  int i;
+  int i, j;
+  int phys_blocks_per_fs = DFS_BLOCKSIZE / DiskBytesPerBlock();
   
   if (dfs_open) {
     return DFS_FAIL;
   }
   
-  // Read superblock from PHYSICAL block 4
-  if (DiskReadBlock(4, &disk_blk) == DISK_FAIL) {
-    printf("DfsOpenFileSystem: Failed to read superblock\n");
-    return DFS_FAIL;
+  // Read superblock from DFS block 1 (spans multiple physical blocks)
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    if (DiskReadBlock(1 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsOpenFileSystem: Failed to read superblock physical block %d\n", i);
+      return DFS_FAIL;
+    }
+    bcopy(disk_blk.data, dfs_blk.data + (i * DiskBytesPerBlock()), DiskBytesPerBlock());
   }
   
-  bcopy(disk_blk.data, (char*)&sb, sizeof(dfs_superblock));
+  bcopy(dfs_blk.data, (char*)&sb, sizeof(dfs_superblock));
   
   if (sb.valid != 1) {
     printf("DfsOpenFileSystem: Filesystem not valid\n");
     return DFS_FAIL;
   }
   
-  // Read inodes using uncached version
+  // Read inodes - read each DFS block manually
   for (i = 0; i < (sb.num_inodes * sizeof(dfs_inode) / sb.blocksize); i++) {
-    if (DfsReadBlockUncached(sb.inode_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsOpenFileSystem: Failed to read inode block %d\n", i);
-      return DFS_FAIL;
+    // Read one DFS block worth of inodes
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      if (DiskReadBlock((sb.inode_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsOpenFileSystem: Failed to read inode block %d physical block %d\n", i, j);
+        return DFS_FAIL;
+      }
+      bcopy(disk_blk.data, dfs_blk.data + (j * DiskBytesPerBlock()), DiskBytesPerBlock());
     }
     bcopy(dfs_blk.data, 
           (char*)(inodes + i * (sb.blocksize / sizeof(dfs_inode))),
           sb.blocksize);
   }
   
-  // Read FBV using uncached version
+  // Read FBV - read each DFS block manually
   for (i = 0; i < (sb.num_blocks / (sb.blocksize * 8)); i++) {
-    if (DfsReadBlockUncached(sb.fbv_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsOpenFileSystem: Failed to read FBV block %d\n", i);
-      return DFS_FAIL;
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      if (DiskReadBlock((sb.fbv_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsOpenFileSystem: Failed to read FBV block %d physical block %d\n", i, j);
+        return DFS_FAIL;
+      }
+      bcopy(disk_blk.data, dfs_blk.data + (j * DiskBytesPerBlock()), DiskBytesPerBlock());
     }
     bcopy(dfs_blk.data,
           (char*)(fbv + i * (sb.blocksize / sizeof(uint32))),
           sb.blocksize);
   }
   
-  // Invalidate disk copy
+  // Invalidate disk copy - write to DFS block 1
   sb.valid = 0;
-  bcopy((char*)&sb, disk_blk.data, sizeof(dfs_superblock));
-  
-  if (DiskWriteBlock(4, &disk_blk) == DISK_FAIL) {
-    printf("DfsOpenFileSystem: Failed to invalidate superblock\n");
-    return DFS_FAIL;
-  }
-  
   bzero(dfs_blk.data, sb.blocksize);
   bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
-  if (DfsWriteBlockUncached(65535, &dfs_blk) == DFS_FAIL) {
-    printf("DfsOpenFileSystem: Failed to invalidate duplicate\n");
-    return DFS_FAIL;
+  
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    bcopy(dfs_blk.data + (i * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+    if (DiskWriteBlock(1 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsOpenFileSystem: Failed to invalidate superblock\n");
+      return DFS_FAIL;
+    }
+  }
+  
+  // Invalidate duplicate at block 65535
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    if (DiskWriteBlock(65535 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsOpenFileSystem: Failed to invalidate duplicate\n");
+      return DFS_FAIL;
+    }
   }
   
   sb.valid = 1;
@@ -430,11 +446,11 @@ int DfsOpenFileSystem() {
 // version.
 //-------------------------------------------------------------------
 
-
 int DfsCloseFileSystem() {
   dfs_block dfs_blk;
   disk_block disk_blk;
-  int i;
+  int i, j;
+  int phys_blocks_per_fs = DFS_BLOCKSIZE / DiskBytesPerBlock();
   
   if (!dfs_open) {
     return DFS_FAIL;
@@ -450,9 +466,12 @@ int DfsCloseFileSystem() {
   for (i = 0; i < (sb.num_inodes * sizeof(dfs_inode) / sb.blocksize); i++) {
     bcopy((char*)(inodes + i * (sb.blocksize / sizeof(dfs_inode))),
           dfs_blk.data, sb.blocksize);
-    if (DfsWriteBlockUncached(sb.inode_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsCloseFileSystem: Failed to write inode block %d\n", i);
-      return DFS_FAIL;
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      bcopy(dfs_blk.data + (j * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+      if (DiskWriteBlock((sb.inode_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsCloseFileSystem: Failed to write inode block %d\n", i);
+        return DFS_FAIL;
+      }
     }
   }
   
@@ -460,34 +479,39 @@ int DfsCloseFileSystem() {
   for (i = 0; i < (sb.num_blocks / (sb.blocksize * 8)); i++) {
     bcopy((char*)(fbv + i * (sb.blocksize / sizeof(uint32))),
           dfs_blk.data, sb.blocksize);
-    if (DfsWriteBlockUncached(sb.fbv_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsCloseFileSystem: Failed to write FBV block %d\n", i);
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      bcopy(dfs_blk.data + (j * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+      if (DiskWriteBlock((sb.fbv_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsCloseFileSystem: Failed to write FBV block %d\n", i);
+        return DFS_FAIL;
+      }
+    }
+  }
+  
+  // Write superblock to DFS block 1
+  sb.valid = 1;
+  bzero(dfs_blk.data, sb.blocksize);
+  bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
+  
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    bcopy(dfs_blk.data + (i * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+    if (DiskWriteBlock(1 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsCloseFileSystem: Failed to write superblock\n");
       return DFS_FAIL;
     }
   }
   
-  // Write superblock to PHYSICAL block 4
-  sb.valid = 1;
-  bzero(disk_blk.data, DiskBytesPerBlock());
-  bcopy((char*)&sb, disk_blk.data, sizeof(dfs_superblock));
-  
-  if (DiskWriteBlock(4, &disk_blk) == DISK_FAIL) {
-    printf("DfsCloseFileSystem: Failed to write superblock\n");
-    return DFS_FAIL;
-  }
-  
   // Write duplicate to DFS block 65535
-  bzero(dfs_blk.data, sb.blocksize);
-  bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
-  if (DfsWriteBlockUncached(65535, &dfs_blk) == DFS_FAIL) {
-    printf("DfsCloseFileSystem: Failed to write duplicate superblock\n");
-    return DFS_FAIL;
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    if (DiskWriteBlock(65535 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsCloseFileSystem: Failed to write duplicate superblock\n");
+      return DFS_FAIL;
+    }
   }
   
   dfs_open = 0;
   return DFS_SUCCESS;
 }
-
 
 
 
