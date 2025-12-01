@@ -29,15 +29,18 @@ void RunOSTests() {
       printf("[OSTests] DfsInodeOpen('%s') failed.\n", fname1);
       return;
     }
+    printf("[OSTests] Testing non-block-aligned write/read...\n");
     for (i = 0; i < (int)sizeof(wbuf); i++) {
       wbuf[i] = (char)(i * 7 + 3);
     }
+    printf("[OSTests] Writing %d bytes at offset %d...\n", (int)sizeof(wbuf), 20);
     start = 20;
     ret = DfsInodeWriteBytes(h1, wbuf, start, sizeof(wbuf));
     if (ret == DFS_FAIL || ret != (int)sizeof(wbuf)) {
       printf("[OSTests] Non-block-aligned write failed: ret=%d\n", ret);
       return;
     }
+    printf("[OSTests] Reading %d bytes at offset %d...\n", (int)sizeof(rbuf), 20);
     ret = DfsInodeReadBytes(h1, rbuf, start, sizeof(rbuf));
     if (ret == DFS_FAIL || ret != (int)sizeof(rbuf)) {
       printf("[OSTests] Non-block-aligned read failed: ret=%d\n", ret);
