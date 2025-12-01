@@ -45,7 +45,6 @@ static uint32 cache_hits = 0;
 static uint32 cache_misses = 0;
 static uint32 disk_reads = 0;
 static uint32 disk_writes = 0;
-static uint32 cache_clock = 0;
 static uint32 total_miss_latency = 0;
 // STUDENT: put your file system level functions below.
 // Some skeletons are provided. You can implement additional functions.
@@ -555,7 +554,7 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
   // Update cache
   bcopy(b->data, cache[slot].data.data, sb.blocksize);
-  adaptive_cache[slot].dirty = 1;
+  cache[slot].dirty = 1;
   
   // Print statistics
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
@@ -1029,7 +1028,7 @@ int DfsCacheHit(int blocknum) {
   int i;
   
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].valid && adaptive_cache[i].blocknum == blocknum) {
+    if (cache[i].valid && cache[i].blocknum == blocknum) {
       return i;  // Return slot index
     }
   }
@@ -1104,15 +1103,15 @@ int DfsCacheFlush() {
 //   int i;
 //   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) return DFS_FAIL;
 //   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-//     if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
-//       if (DfsWriteBlockUncached(adaptive_cache[i].blocknum,
-//                                 &adaptive_cache[i].data) == DFS_FAIL) {
+//     if (cache[i].valid && cache[i].dirty) {
+//       if (DfsWriteBlockUncached(cache[i].blocknum,
+//                                 &cache[i].data) == DFS_FAIL) {
 //         LockHandleRelease(cache_lock);
 //         return DFS_FAIL;
 //       }
-//       adaptive_cache[i].dirty = 0;
+//       cache[i].dirty = 0;
 //     }
-//     adaptive_cache[i].valid = 0;
+//     cache[i].valid = 0;
 //   }
 //   LockHandleRelease(cache_lock);
 //   return DFS_SUCCESS;
