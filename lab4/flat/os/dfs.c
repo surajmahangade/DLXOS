@@ -60,13 +60,37 @@ static uint32 total_miss_latency = 0;
 // STUDENT: put your file system level functions below.
 // Some skeletons are provided. You can implement additional functions.
 
-static inline int min(int a, int b) {
+inline int min(int a, int b) {
   return (a < b) ? a : b;
 }
 
 ///////////////////////////////////////////////////////////////////
 // Non-inode functions first
 ///////////////////////////////////////////////////////////////////
+
+// Add near the top of dfs.c, after the includes and before DfsModuleInit
+
+//-----------------------------------------------------------------
+// Helper function to sleep for specified milliseconds
+//-----------------------------------------------------------------
+static void sleep_ms(int milliseconds) {
+  int start_jiffies = ClkGetCurJiffies();
+  int sleep_jiffies = (milliseconds * 1000) / ClkGetResolution(); // Convert ms to jiffies
+  
+  // Busy wait (simple implementation)
+  while ((ClkGetCurJiffies() - start_jiffies) < sleep_jiffies) {
+    // Just wait
+    
+  }
+}
+
+//-----------------------------------------------------------------
+// Helper function to get current time in milliseconds
+//-----------------------------------------------------------------
+static uint32 GetCurrentTime() {
+  // Convert jiffies to milliseconds
+  return (ClkGetCurJiffies() * ClkGetResolution()) / 1000;
+}
 
 //-----------------------------------------------------------------
 // DfsModuleInit is called at boot time to initialize things and
@@ -1187,7 +1211,7 @@ int DfsCacheHit(int blocknum) {
   int i;
   
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (cache[i].valid && cache[i].blocknum == blocknum) {
+    if (adaptive_cache[i].valid && adaptive_cache[i].blocknum == blocknum) {
       return i;  // Return slot index
     }
   }
@@ -1199,39 +1223,39 @@ int DfsCacheHit(int blocknum) {
 int DfsCacheAllocateSlot(int blocknum) {
   int i;
   int lru_slot = 0;
-  uint32 lru_time = cache[0].timestamp;
+  uint32 lru_time = adaptive_cache[0].timestamp;
   
   // First, look for empty slot
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (!cache[i].valid) {
-      cache[i].valid = 1;
-      cache[i].dirty = 0;
-      cache[i].blocknum = blocknum;
-      cache[i].timestamp = cache_clock++;
+    if (!adaptive_cache[i].valid) {
+      adaptive_cache[i].valid = 1;
+      adaptive_cache[i].dirty = 0;
+      adaptive_cache[i].blocknum = blocknum;
+      adaptive_cache[i].timestamp = cache_clock++;
       return i;
     }
   }
   
   // No empty slot, find LRU (Least Recently Used)
   for (i = 1; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (cache[i].timestamp < lru_time) {
-      lru_time = cache[i].timestamp;
+    if (adaptive_cache[i].timestamp < lru_time) {
+      lru_time = adaptive_cache[i].timestamp;
       lru_slot = i;
     }
   }
   
   // Evict LRU slot - write back if dirty
-  if (cache[lru_slot].dirty) {
-    if (DfsWriteBlockUncached(cache[lru_slot].blocknum, &cache[lru_slot].data) == DFS_FAIL) {
+  if (adaptive_cache[lru_slot].dirty) {
+    if (DfsWriteBlockUncached(adaptive_cache[lru_slot].blocknum, &adaptive_cache[lru_slot].data) == DFS_FAIL) {
       return DFS_FAIL;
     }
   }
   
   // Allocate this slot
-  cache[lru_slot].valid = 1;
-  cache[lru_slot].dirty = 0;
-  cache[lru_slot].blocknum = blocknum;
-  cache[lru_slot].timestamp = cache_clock++;
+  adaptive_cache[lru_slot].valid = 1;
+  adaptive_cache[lru_slot].dirty = 0;
+  adaptive_cache[lru_slot].blocknum = blocknum;
+  adaptive_cache[lru_slot].timestamp = cache_clock++;
   
   return lru_slot;
 }
@@ -1244,14 +1268,14 @@ int DfsCacheFlush() {
   }
   
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (cache[i].valid && cache[i].dirty) {
-      if (DfsWriteBlockUncached(cache[i].blocknum, &cache[i].data) == DFS_FAIL) {
+    if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
+      if (DfsWriteBlockUncached(adaptive_cache[i].blocknum, &adaptive_cache[i].data) == DFS_FAIL) {
         LockHandleRelease(cache_lock);
         return DFS_FAIL;
       }
-      cache[i].dirty = 0;
+      adaptive_cache[i].dirty = 0;
     }
-    cache[i].valid = 0;  // Clear all slots
+    adaptive_cache[i].valid = 0;  // Clear all slots
   }
   
   LockHandleRelease(cache_lock);

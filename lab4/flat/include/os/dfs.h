@@ -45,6 +45,8 @@ uint32 DfsAllocateBlock();
 int DfsFreeBlock(uint32 blocknum);
 void DfsModuleInit();
 void DfsInvalidate();
+int DfsCacheFlush();
+int DfsInodeRename(uint32 handle, char *newname);
 
 
 
