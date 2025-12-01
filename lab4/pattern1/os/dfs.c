@@ -6,6 +6,7 @@
 #include "dfs.h"
 #include "synch.h"
 
+// Additional cache metadata
 typedef struct cache_entry {
   int valid;           // Is this slot occupied?
   int dirty;           // Has block been modified?
@@ -13,6 +14,8 @@ typedef struct cache_entry {
   dfs_block data;      // The actual data
   uint32 timestamp;    // For LRU replacement (or access count)
 } cache_entry;
+
+
 
 static dfs_inode inodes[DFS_INODE_MAX_NUM];
 static dfs_superblock sb;
@@ -34,6 +37,10 @@ static cache_entry cache[DFS_CACHE_NUM_SLOTS];
 static uint32 cache_clock = 0; // For LRU timestamping
 
 
+
+
+
+// Statistics
 static uint32 cache_hits = 0;
 static uint32 cache_misses = 0;
 static uint32 disk_reads = 0;
@@ -42,7 +49,7 @@ static uint32 total_miss_latency = 0;
 // STUDENT: put your file system level functions below.
 // Some skeletons are provided. You can implement additional functions.
 
-static inline int min(int a, int b) {
+inline int min(int a, int b) {
   return (a < b) ? a : b;
 }
 
@@ -50,12 +57,43 @@ static inline int min(int a, int b) {
 // Non-inode functions first
 ///////////////////////////////////////////////////////////////////
 
+// Add near the top of dfs.c, after the includes and before DfsModuleInit
+
+//-----------------------------------------------------------------
+// Helper function to sleep for specified milliseconds
+//-----------------------------------------------------------------
+static void sleep_ms(int milliseconds) {
+  int start_jiffies;
+  int sleep_jiffies;
+  EnableIntrs();
+  start_jiffies = ClkGetCurJiffies();
+  sleep_jiffies = (milliseconds * 1000) / ClkGetResolution(); // Convert ms to jiffies
+  
+  // Busy wait (simple implementation)
+  while ((ClkGetCurJiffies() - start_jiffies) < sleep_jiffies) {
+    // Just wait
+    // print sleep ClkGetCurJiffies() - start_jiffies;
+    // printf("current jiffies: %d\n", ClkGetCurJiffies() - start_jiffies);
+
+  }
+  DisableIntrs();
+}
+
+//-----------------------------------------------------------------
+// Helper function to get current time in milliseconds
+//-----------------------------------------------------------------
+static uint32 GetCurrentTime() {
+  // Convert jiffies to milliseconds
+  return (ClkGetCurJiffies() * ClkGetResolution()) / 1000;
+}
+
 //-----------------------------------------------------------------
 // DfsModuleInit is called at boot time to initialize things and
 // open the file system for use.
 //-----------------------------------------------------------------
 
 void DfsModuleInit() {
+
 // You essentially set the file system as invalid and then open 
 // using DfsOpenFileSystem().
   int i;
@@ -65,13 +103,14 @@ void DfsModuleInit() {
   cache_lock = LockCreate();
   dfs_open = 0;
   
-  // Initialize cache
+  // Initialize adaptive cache
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
     cache[i].valid = 0;
     cache[i].dirty = 0;
     cache[i].blocknum = 0;
     cache[i].timestamp = 0;
   }
+
   
   cache_hits = 0;
   cache_misses = 0;
@@ -111,61 +150,77 @@ void DfsInvalidate() {
 int DfsOpenFileSystem() {
   disk_block disk_blk;
   dfs_block dfs_blk;
-  int i;
+  int i, j;
+  int phys_blocks_per_fs = DFS_BLOCKSIZE / DiskBytesPerBlock();
   
   if (dfs_open) {
-    return DFS_FAIL;
+    return DFS_SUCCESS;
   }
   
-  // Read superblock from PHYSICAL block 4
-  if (DiskReadBlock(4, &disk_blk) == DISK_FAIL) {
-    printf("DfsOpenFileSystem: Failed to read superblock\n");
-    return DFS_FAIL;
+  // Read superblock from DFS block 1 (spans multiple physical blocks)
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    if (DiskReadBlock(1 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsOpenFileSystem: Failed to read superblock physical block %d\n", i);
+      return DFS_FAIL;
+    }
+    bcopy(disk_blk.data, dfs_blk.data + (i * DiskBytesPerBlock()), DiskBytesPerBlock());
   }
   
-  bcopy(disk_blk.data, (char*)&sb, sizeof(dfs_superblock));
+  bcopy(dfs_blk.data, (char*)&sb, sizeof(dfs_superblock));
   
   if (sb.valid != 1) {
     printf("DfsOpenFileSystem: Filesystem not valid\n");
     return DFS_FAIL;
   }
   
-  // Read inodes using uncached version
+  // Read inodes - read each DFS block manually
   for (i = 0; i < (sb.num_inodes * sizeof(dfs_inode) / sb.blocksize); i++) {
-    if (DfsReadBlockUncached(sb.inode_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsOpenFileSystem: Failed to read inode block %d\n", i);
-      return DFS_FAIL;
+    // Read one DFS block worth of inodes
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      if (DiskReadBlock((sb.inode_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsOpenFileSystem: Failed to read inode block %d physical block %d\n", i, j);
+        return DFS_FAIL;
+      }
+      bcopy(disk_blk.data, dfs_blk.data + (j * DiskBytesPerBlock()), DiskBytesPerBlock());
     }
     bcopy(dfs_blk.data, 
           (char*)(inodes + i * (sb.blocksize / sizeof(dfs_inode))),
           sb.blocksize);
   }
   
-  // Read FBV using uncached version
+  // Read FBV - read each DFS block manually
   for (i = 0; i < (sb.num_blocks / (sb.blocksize * 8)); i++) {
-    if (DfsReadBlockUncached(sb.fbv_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsOpenFileSystem: Failed to read FBV block %d\n", i);
-      return DFS_FAIL;
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      if (DiskReadBlock((sb.fbv_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsOpenFileSystem: Failed to read FBV block %d physical block %d\n", i, j);
+        return DFS_FAIL;
+      }
+      bcopy(disk_blk.data, dfs_blk.data + (j * DiskBytesPerBlock()), DiskBytesPerBlock());
     }
     bcopy(dfs_blk.data,
           (char*)(fbv + i * (sb.blocksize / sizeof(uint32))),
           sb.blocksize);
   }
   
-  // Invalidate disk copy
+  // Invalidate disk copy - write to DFS block 1
   sb.valid = 0;
-  bcopy((char*)&sb, disk_blk.data, sizeof(dfs_superblock));
-  
-  if (DiskWriteBlock(4, &disk_blk) == DISK_FAIL) {
-    printf("DfsOpenFileSystem: Failed to invalidate superblock\n");
-    return DFS_FAIL;
-  }
-  
   bzero(dfs_blk.data, sb.blocksize);
   bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
-  if (DfsWriteBlockUncached(65535, &dfs_blk) == DFS_FAIL) {
-    printf("DfsOpenFileSystem: Failed to invalidate duplicate\n");
-    return DFS_FAIL;
+  
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    bcopy(dfs_blk.data + (i * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+    if (DiskWriteBlock(1 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsOpenFileSystem: Failed to invalidate superblock\n");
+      return DFS_FAIL;
+    }
+  }
+  
+  // Invalidate duplicate at block 65535
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    if (DiskWriteBlock(65535 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsOpenFileSystem: Failed to invalidate duplicate\n");
+      return DFS_FAIL;
+    }
   }
   
   sb.valid = 1;
@@ -180,11 +235,11 @@ int DfsOpenFileSystem() {
 // version.
 //-------------------------------------------------------------------
 
-
 int DfsCloseFileSystem() {
   dfs_block dfs_blk;
   disk_block disk_blk;
-  int i;
+  int i, j;
+  int phys_blocks_per_fs = DFS_BLOCKSIZE / DiskBytesPerBlock();
   
   if (!dfs_open) {
     return DFS_FAIL;
@@ -200,9 +255,12 @@ int DfsCloseFileSystem() {
   for (i = 0; i < (sb.num_inodes * sizeof(dfs_inode) / sb.blocksize); i++) {
     bcopy((char*)(inodes + i * (sb.blocksize / sizeof(dfs_inode))),
           dfs_blk.data, sb.blocksize);
-    if (DfsWriteBlockUncached(sb.inode_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsCloseFileSystem: Failed to write inode block %d\n", i);
-      return DFS_FAIL;
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      bcopy(dfs_blk.data + (j * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+      if (DiskWriteBlock((sb.inode_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsCloseFileSystem: Failed to write inode block %d\n", i);
+        return DFS_FAIL;
+      }
     }
   }
   
@@ -210,34 +268,39 @@ int DfsCloseFileSystem() {
   for (i = 0; i < (sb.num_blocks / (sb.blocksize * 8)); i++) {
     bcopy((char*)(fbv + i * (sb.blocksize / sizeof(uint32))),
           dfs_blk.data, sb.blocksize);
-    if (DfsWriteBlockUncached(sb.fbv_start + i, &dfs_blk) == DFS_FAIL) {
-      printf("DfsCloseFileSystem: Failed to write FBV block %d\n", i);
+    for (j = 0; j < phys_blocks_per_fs; j++) {
+      bcopy(dfs_blk.data + (j * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+      if (DiskWriteBlock((sb.fbv_start + i) * phys_blocks_per_fs + j, &disk_blk) == DISK_FAIL) {
+        printf("DfsCloseFileSystem: Failed to write FBV block %d\n", i);
+        return DFS_FAIL;
+      }
+    }
+  }
+  
+  // Write superblock to DFS block 1
+  sb.valid = 1;
+  bzero(dfs_blk.data, sb.blocksize);
+  bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
+  
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    bcopy(dfs_blk.data + (i * DiskBytesPerBlock()), disk_blk.data, DiskBytesPerBlock());
+    if (DiskWriteBlock(1 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsCloseFileSystem: Failed to write superblock\n");
       return DFS_FAIL;
     }
   }
   
-  // Write superblock to PHYSICAL block 4
-  sb.valid = 1;
-  bzero(disk_blk.data, DiskBytesPerBlock());
-  bcopy((char*)&sb, disk_blk.data, sizeof(dfs_superblock));
-  
-  if (DiskWriteBlock(4, &disk_blk) == DISK_FAIL) {
-    printf("DfsCloseFileSystem: Failed to write superblock\n");
-    return DFS_FAIL;
-  }
-  
   // Write duplicate to DFS block 65535
-  bzero(dfs_blk.data, sb.blocksize);
-  bcopy((char*)&sb, dfs_blk.data, sizeof(dfs_superblock));
-  if (DfsWriteBlockUncached(65535, &dfs_blk) == DFS_FAIL) {
-    printf("DfsCloseFileSystem: Failed to write duplicate superblock\n");
-    return DFS_FAIL;
+  for (i = 0; i < phys_blocks_per_fs; i++) {
+    if (DiskWriteBlock(65535 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+      printf("DfsCloseFileSystem: Failed to write duplicate superblock\n");
+      return DFS_FAIL;
+    }
   }
   
   dfs_open = 0;
   return DFS_SUCCESS;
 }
-
 
 
 
@@ -321,10 +384,12 @@ int DfsReadBlockUncached(uint32 blocknum, dfs_block *b) {
   if (!dfs_open || blocknum >= sb.num_blocks) {
     return DFS_FAIL;
   }
+  printf("DfsReadBlockUncached: Reading block %d\n", blocknum);
   
   for (i = 0; i < phys_blocks_per_fs; i++) {
     // Add 5ms delay to simulate disk latency
     sleep_ms(5);
+    printf("DfsReadBlockUncached: Reading physical block %d\n", blocknum * phys_blocks_per_fs + i);
     
     if (DiskReadBlock(blocknum * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
       return DFS_FAIL;
@@ -336,6 +401,7 @@ int DfsReadBlockUncached(uint32 blocknum, dfs_block *b) {
   return sb.blocksize;
 }
 
+// Adaptive DfsReadBlock
 int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   int slot;
   uint32 start_time, end_time, latency;
@@ -355,7 +421,7 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   if (slot != DFS_FAIL) {
     // Cache HIT
     cache_hits++;
-    cache[slot].timestamp = cache_clock++;  // Update LRU timestamp
+    cache[slot].timestamp = cache_clock++;
     bcopy(cache[slot].data.data, b->data, sb.blocksize);
     LockHandleRelease(cache_lock);
     return sb.blocksize;
@@ -363,9 +429,9 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   
   // Cache MISS
   cache_misses++;
-  start_time = GetCurrentTime();  // Start timing
+  start_time = GetCurrentTime();
   
-  // Allocate cache slot
+  // Allocate cache slot 
   slot = DfsCacheAllocateSlot(blocknum);
   if (slot == DFS_FAIL) {
     LockHandleRelease(cache_lock);
@@ -386,7 +452,7 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   // Copy to user buffer
   bcopy(cache[slot].data.data, b->data, sb.blocksize);
   
-  // Print statistics on cache miss
+  // Print statistics
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
   miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
@@ -431,7 +497,7 @@ int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b) {
   return sb.blocksize;
 }
 
-
+// Adaptive DfsWriteBlock
 int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   int slot;
   uint32 start_time, end_time, latency;
@@ -445,18 +511,20 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
     return DFS_FAIL;
   }
   
+  printf("DfsWriteBlock: Writing block %d\n", blocknum);
   // Check for cache hit
   slot = DfsCacheHit(blocknum);
-  
+  printf("DfsWriteBlock: Cache slot = %d\n", slot);
   if (slot != DFS_FAIL) {
     // Cache HIT
     cache_hits++;
     cache[slot].timestamp = cache_clock++;
     bcopy(b->data, cache[slot].data.data, sb.blocksize);
-    cache[slot].dirty = 1;  // Mark as dirty
+    cache[slot].dirty = 1;
     LockHandleRelease(cache_lock);
     return sb.blocksize;
   }
+  printf("DfsWriteBlock: Cache MISS for block %d\n", blocknum);
   
   // Cache MISS
   cache_misses++;
@@ -464,23 +532,27 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   
   // Allocate cache slot
   slot = DfsCacheAllocateSlot(blocknum);
+  printf("DfsWriteBlock: Allocated cache slot %d for block %d\n", slot, blocknum);
   if (slot == DFS_FAIL) {
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
+  printf("DfsWriteBlock: Reading block %d into cache slot %d\n", blocknum, slot);
   
-  // Read existing data from disk first (for partial writes)
+  // Read existing data first
   if (DfsReadBlockUncached(blocknum, &cache[slot].data) == DFS_FAIL) {
     cache[slot].valid = 0;
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
+  printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
   
   end_time = GetCurrentTime();
   latency = end_time - start_time;
   total_miss_latency += latency;
   
-  // Update cache with new data
+  printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
+  // Update cache
   bcopy(b->data, cache[slot].data.data, sb.blocksize);
   cache[slot].dirty = 1;
   
@@ -514,7 +586,8 @@ uint32 DfsInodeFilenameExists(char *filename) {
   }
   
   for (i = 0; i < sb.num_inodes; i++) {
-    if (inodes[i].inuse && dstrncmp(inodes[i].filename, filename, 44) == 0) {
+    // 44 = DFS_MAX_FILENAME_LENGTH
+    if (inodes[i].inuse && dstrncmp(inodes[i].filename, filename, DFS_MAX_FILENAME_LENGTH) == 0) {
       return i;
     }
   }
@@ -582,7 +655,8 @@ uint32 DfsInodeOpen(char *filename) {
     if (!inodes[i].inuse) {
       inodes[i].inuse = 1;
       inodes[i].filesize = 0;
-      dstrncpy(inodes[i].filename, filename, 44);
+      // 44 = DFS_MAX_FILENAME_LENGTH
+      dstrncpy(inodes[i].filename, filename, DFS_MAX_FILENAME_LENGTH);
       for (j = 0; j < 10; j++) {
         inodes[i].direct[j] = 0;
       }
@@ -746,10 +820,12 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
   }
   
   while (bytes_written < num_bytes) {
+    printf("Writing byte %d of %d\n", bytes_written, num_bytes);
     virtual_block = (start_byte + bytes_written) / sb.blocksize;
     block_offset = (start_byte + bytes_written) % sb.blocksize;
     
     fs_block = DfsInodeTranslateVirtualToFilesys(handle, virtual_block);
+    printf("Virtual block: %d, Block offset: %d, FS block: %d\n", virtual_block, block_offset, fs_block);
     
     if (fs_block == 0 || fs_block == DFS_FAIL) {
       fs_block = DfsInodeAllocateVirtualBlock(handle, virtual_block);
@@ -765,7 +841,7 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
     
     bytes_to_write = min(num_bytes - bytes_written, sb.blocksize - block_offset);
     bcopy((char*)mem + bytes_written, blk.data + block_offset, bytes_to_write);
-    
+    printf("Writing %d bytes to FS block %d at offset %d\n", bytes_to_write, fs_block, block_offset);
     if (DfsWriteBlock(fs_block, &blk) == DFS_FAIL) {
       return DFS_FAIL;
     }
@@ -812,6 +888,11 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
   uint32 indirect_block;
   int entries_per_block = sb.blocksize / sizeof(uint32);
   
+  // recheck this
+  uint32 max_blocks = 10 + entries_per_block + entries_per_block * entries_per_block;
+  if (virtual_blocknum >= max_blocks) return DFS_FAIL;
+  // end recheck 
+
   if (!dfs_open || handle >= sb.num_inodes || !inodes[handle].inuse) {
     return DFS_FAIL;
   }
@@ -894,7 +975,11 @@ uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum)
   uint32 *table;
   uint32 indirect_block;
   int entries_per_block = sb.blocksize / sizeof(uint32);
-  
+  // recheck this
+  uint32 max_blocks = 10 + entries_per_block + entries_per_block * entries_per_block;
+  if (virtual_blocknum >= max_blocks) return DFS_FAIL;
+  // end recheck
+
   if (!dfs_open || handle >= sb.num_inodes || !inodes[handle].inuse) {
     return DFS_FAIL;
   }
@@ -952,6 +1037,8 @@ int DfsCacheHit(int blocknum) {
 }
 
 
+// In pattern1/os/dfs.c - Modify DfsCacheAllocateSlot
+
 int DfsCacheAllocateSlot(int blocknum) {
   int i;
   static int fifo_head = 0;  // FIFO pointer
@@ -1007,4 +1094,22 @@ int DfsCacheFlush() {
   LockHandleRelease(cache_lock);
   return DFS_SUCCESS;
 }
+
+// int DfsCacheFlush() {
+//   int i;
+//   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) return DFS_FAIL;
+//   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
+//     if (cache[i].valid && cache[i].dirty) {
+//       if (DfsWriteBlockUncached(cache[i].blocknum,
+//                                 &cache[i].data) == DFS_FAIL) {
+//         LockHandleRelease(cache_lock);
+//         return DFS_FAIL;
+//       }
+//       cache[i].dirty = 0;
+//     }
+//     cache[i].valid = 0;
+//   }
+//   LockHandleRelease(cache_lock);
+//   return DFS_SUCCESS;
+// }
 

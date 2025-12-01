@@ -12,7 +12,6 @@ int DfsReadBlockUncached(uint32 blocknum, dfs_block *b);
 int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b);
 
 
-//cache functions
 int DfsCacheHit(int blocknum);
 int DfsCacheAllocateSlot(int blocknum);
 int DfsCacheFlush();
@@ -33,7 +32,9 @@ uint32 DfsInodeFilenameExists(char *filename);
 uint32 DfsAllocateBlock();
 int DfsFreeBlock(uint32 blocknum);
 void DfsModuleInit();
-void DfsInvalidate()
+void DfsInvalidate();
+int DfsCacheFlush();
+int DfsInodeRename(uint32 handle, char *newname);
 
 
 

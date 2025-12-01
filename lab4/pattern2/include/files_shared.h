@@ -9,7 +9,6 @@
 
 #define FILE_MAX_READWRITE_BYTES 4096
 
-static lock_t file_lock;
 
 typedef struct file_descriptor {
   // STUDENT: put file descriptor info here

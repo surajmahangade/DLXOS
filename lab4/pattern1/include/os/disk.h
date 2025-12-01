@@ -13,7 +13,7 @@ typedef struct disk_block {
 
 
 // Total size of this disk, in units of 256-byte blocks
-#define DISK_NUMBLOCKS 0x1  // Students: correct it
+#define DISK_NUMBLOCKS 0x40000  // Students: correct it
 
 #define DISK_SUCCESS 1
 #define DISK_FAIL -1
