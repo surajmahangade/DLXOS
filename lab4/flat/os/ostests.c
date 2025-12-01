@@ -58,8 +58,9 @@ void RunOSTests() {
     char fname2[] = "indirect.bin";
     uint32 h2;
     int total;
-    char *largew;
-    char *larger;
+    /* Use static buffers per OS constraints (no dynamic alloc). */
+    static char largew[12 * 1024];
+    static char larger[12 * 1024];
     int i;
     h2 = DfsInodeOpen(fname2);
     if (h2 == DFS_FAIL) {
@@ -68,12 +69,6 @@ void RunOSTests() {
     }
     /* Write 12 * 1024 bytes (exceeds 10 direct blocks) */
     total = 12 * 1024;
-    largew = (char *)MemoryAlloc(total);
-    larger = (char *)MemoryAlloc(total);
-    if (!largew || !larger) {
-      printf("[OSTests] MemoryAlloc failed for indirect test.\n");
-      return;
-    }
     for (i = 0; i < total; i++) {
       largew[i] = (char)((i * 13) & 0xFF);
     }
@@ -95,8 +90,6 @@ void RunOSTests() {
       }
     }
     printf("[OSTests] Indirect addressing write/read passed.\n");
-    MemoryFree(largew);
-    MemoryFree(larger);
   }
 
   /* Test 3: Persistence across close/reopen */
