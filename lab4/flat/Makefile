@@ -12,3 +12,10 @@ ostests:
 	mainframer.sh 'cd apps/ostests && make clean'
 	mainframer.sh 'cd apps/ostests && make'
 	mainframer.sh 'cd bin && dlxsim -x os.dlx.obj -a -D F -u ostests.dlx.obj'
+
+filetest:
+	mainframer.sh 'cd os && make clean'
+	mainframer.sh 'cd os && make'
+	mainframer.sh 'cd apps/filetest && make clean'
+	mainframer.sh 'cd apps/filetest && make'
+	mainframer.sh 'cd bin && dlxsim -x os.dlx.obj -a -u filetest.dlx.obj'

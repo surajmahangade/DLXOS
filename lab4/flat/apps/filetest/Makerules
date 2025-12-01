@@ -1,0 +1,11 @@
+# General rules for building one application out of many
+# source files. Pattern copied from other apps (fdisk/ostests)
+
+HDRS=usertraps.h
+APPROOT=../..
+INCDIR+=-I../include
+
+top: default
+
+run:
+	cd ../; make run
