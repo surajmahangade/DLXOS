@@ -422,7 +422,8 @@ int DfsReadBlockUncached(uint32 blocknum, dfs_block *b) {
 int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   int slot;
   uint32 start_time, end_time, latency;
-  double hit_rate, miss_rate;
+  // double hit_rate, miss_rate;
+  uint32 total_ops, hit_int, hit_dec, miss_int, miss_dec;
   
   if (!dfs_open || blocknum >= sb.num_blocks) {
     return DFS_FAIL;
@@ -470,12 +471,30 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   bcopy(cache[slot].data.data, b->data, sb.blocksize);
   
   // Print statistics
-  hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
-  miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
+total_ops = (cache_hits + cache_misses);
+  if (total_ops == 0) total_ops = 1; 
+
+  // 2. Calculate Integer and Decimal parts using integer math
+  // We want 3 decimal places, so we work with 100,000 multiplier
+  hit_int = (cache_hits * 100) / total_ops;
+  hit_dec = ((unsigned long long)cache_hits * 100000 / total_ops) % 1000;
+
+  miss_int = (cache_misses * 100) / total_ops;
+  miss_dec = ((unsigned long long)cache_misses * 100000 / total_ops) % 1000;
+
+  // 3. Print using %d (integers) ONLY. Do not use %f.
+  printf("Cache Miss: Hit Rate = %d.%03d%%, Miss Rate = %d.%03d%%, Disk Reads = %u, Disk Writes = %u, Miss Handling Latency = %ums\n",
+    hit_int, hit_dec, 
+    miss_int, miss_dec, 
+    disk_reads, disk_writes,
+    (total_miss_latency / (cache_misses ? cache_misses : 1)));
+
+  // hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
+  // miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
-  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
-         hit_rate, miss_rate, disk_reads, disk_writes, 
-         total_miss_latency / cache_misses);
+  // printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
+  //        hit_rate, miss_rate, disk_reads, disk_writes, 
+  //        total_miss_latency / cache_misses);
   
   LockHandleRelease(cache_lock);
   return sb.blocksize;
@@ -520,7 +539,8 @@ int DfsWriteBlockUncached(uint32 blocknum, dfs_block *b) {
 int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   int slot;
   uint32 start_time, end_time, latency;
-  double hit_rate, miss_rate;
+  // double hit_rate, miss_rate;
+  uint32 total_ops, hit_int, hit_dec, miss_int, miss_dec;
   
   if (!dfs_open || blocknum >= sb.num_blocks) {
     return DFS_FAIL;
@@ -576,12 +596,27 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   cache[slot].dirty = 1;
   
   // Print statistics
-  hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
-  miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
+  total_ops = (cache_hits + cache_misses);
+  if (total_ops == 0) total_ops = 1;
+
+  // Calculate Integer and Decimal parts using integer math
+  hit_int = (cache_hits * 100) / total_ops;
+  hit_dec = ((unsigned long long)cache_hits * 100000 / total_ops) % 1000;
+  miss_int = (cache_misses * 100) / total_ops;
+  miss_dec = ((unsigned long long)cache_misses * 100000 / total_ops) % 1000;
+
+  // Print using %d (integers) ONLY. Do not use %f.
+  printf("Cache Miss: Hit Rate = %d.%03d%%, Miss Rate = %d.%03d%%, Disk Reads = %u, Disk Writes = %u, Miss Handling Latency = %ums\n",
+    hit_int, hit_dec, 
+    miss_int, miss_dec, 
+    disk_reads, disk_writes,
+    (total_miss_latency / (cache_misses ? cache_misses : 1)));
+  // hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
+  // miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
-  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
-         hit_rate, miss_rate, disk_reads, disk_writes,
-         total_miss_latency / cache_misses);
+  // printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
+  //        hit_rate, miss_rate, disk_reads, disk_writes,
+  //        total_miss_latency / cache_misses);
   
   LockHandleRelease(cache_lock);
   return sb.blocksize;
