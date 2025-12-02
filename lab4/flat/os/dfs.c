@@ -367,10 +367,20 @@ int DfsFreeBlock(uint32 blocknum) {
   
   word_idx = blocknum / 32;
   bit_idx = blocknum % 32;
-  mask = 1 << bit_idx;
-  
-  fbv[word_idx] &= ~mask;
-  
+  // Guard against out-of-range index and use unsigned shift to avoid UB
+  if (word_idx < DFS_FBV_MAX_NUM_WORDS) {
+    mask = (uint32)1U << bit_idx;
+    // If bit not set, nothing to do
+    if ((fbv[word_idx] & mask) == 0) {
+      LockHandleRelease(fbv_lock);
+      return DFS_SUCCESS;
+    }
+    // Clear bit using invert() to avoid unary ~ promotion quirks in simulator
+    fbv[word_idx] = fbv[word_idx] & invert(mask);
+  } else {
+    LockHandleRelease(fbv_lock);
+    return DFS_FAIL;
+  }
   LockHandleRelease(fbv_lock);
   return DFS_SUCCESS;
 }
