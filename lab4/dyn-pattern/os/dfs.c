@@ -248,6 +248,7 @@ int DfsAdaptiveCacheAllocateSlot(int blocknum) {
   static int clock_hand = 0;  // For clock algorithm
   int evict_slot = -1;
   AccessPattern effective_pattern;
+  uint32 total_accesses;
   
   // First, look for empty slot
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
@@ -316,7 +317,7 @@ int DfsAdaptiveCacheAllocateSlot(int blocknum) {
 
     // Choose replacement policy based on detected pattern + simple thrash guard
   effective_pattern = current_pattern;
-  uint32 total_accesses = cache_hits + cache_misses;
+  total_accesses = cache_hits + cache_misses;
 
   // If we are clearly thrashing (very low hit rate), stop trusting the classifier
   if (total_accesses > (uint32)(DFS_CACHE_NUM_SLOTS * 4)) {
