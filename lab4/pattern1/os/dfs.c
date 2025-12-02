@@ -184,7 +184,8 @@ int DfsOpenFileSystem() {
     printf("DfsOpenFileSystem: Filesystem not valid\n");
     return DFS_FAIL;
   }
-  
+  // printf("DfsOpenFileSystem: Filesystem valid with %d blocks, %d inodes, blocksize %d\n", 
+  //        sb.num_blocks, sb.num_inodes, sb.blocksize);
   // Read inodes - read each DFS block manually
   for (i = 0; i < (sb.num_inodes * sizeof(dfs_inode) / sb.blocksize); i++) {
     // Read one DFS block worth of inodes
@@ -227,11 +228,18 @@ int DfsOpenFileSystem() {
     }
   }
   
-  // Invalidate duplicate at block 65535
-  for (i = 0; i < phys_blocks_per_fs; i++) {
-    if (DiskWriteBlock(65535 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
-      printf("DfsOpenFileSystem: Failed to invalidate duplicate\n");
-      return DFS_FAIL;
+  // Invalidate duplicate superblock copy at a high-numbered DFS block, but guard disk size
+  {
+    int duplicate_fs_block = 65535; // as per spec; may exceed actual disk size
+    int total_phys_blocks = duplicate_fs_block * phys_blocks_per_fs + phys_blocks_per_fs;
+    int disk_phys_blocks = DiskSize() / DiskBytesPerBlock();
+    if (total_phys_blocks <= disk_phys_blocks) {
+      for (i = 0; i < phys_blocks_per_fs; i++) {
+        if (DiskWriteBlock(duplicate_fs_block * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+          printf("DfsOpenFileSystem: Failed to invalidate duplicate\n");
+          return DFS_FAIL;
+        }
+      }
     }
   }
   
@@ -301,11 +309,18 @@ int DfsCloseFileSystem() {
     }
   }
   
-  // Write duplicate to DFS block 65535
-  for (i = 0; i < phys_blocks_per_fs; i++) {
-    if (DiskWriteBlock(65535 * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
-      printf("DfsCloseFileSystem: Failed to write duplicate superblock\n");
-      return DFS_FAIL;
+  // Write duplicate superblock copy guarded by disk size
+  {
+    int duplicate_fs_block = 65535;
+    int total_phys_blocks = duplicate_fs_block * phys_blocks_per_fs + phys_blocks_per_fs;
+    int disk_phys_blocks = DiskSize() / DiskBytesPerBlock();
+    if (total_phys_blocks <= disk_phys_blocks) {
+      for (i = 0; i < phys_blocks_per_fs; i++) {
+        if (DiskWriteBlock(duplicate_fs_block * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
+          printf("DfsCloseFileSystem: Failed to write duplicate superblock\n");
+          return DFS_FAIL;
+        }
+      }
     }
   }
   
@@ -465,6 +480,7 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   
   // Copy to user buffer
   bcopy(cache[slot].data.data, b->data, sb.blocksize);
+  // printf("cache hits: %u, cache misses: %u\n", (unsigned)cache_hits, (unsigned)cache_misses);
   
   // Print statistics
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
@@ -572,6 +588,7 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   bcopy(b->data, cache[slot].data.data, sb.blocksize);
   cache[slot].dirty = 1;
   
+  // printf("cache hits: %u, cache misses: %u\n", (unsigned)cache_hits, (unsigned)cache_misses);
   // Print statistics
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
   miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
@@ -799,6 +816,21 @@ int DfsInodeReadBytes(uint32 handle, void *mem, int start_byte, int num_bytes) {
     
     fs_block = DfsInodeTranslateVirtualToFilesys(handle, virtual_block);
     if (fs_block == 0 || fs_block == DFS_FAIL) {
+      // Debug: help diagnose double-indirect translation failures around block 266
+      // printf("DfsInodeReadBytes: translate failed (inode=%u vb=%d start=%d size=%d fs=%u di=%u)\n",
+      //        handle, virtual_block, start_byte, num_bytes, (unsigned)fs_block,
+      //        (unsigned)inodes[handle].double_indirect);
+      if (inodes[handle].double_indirect != 0) {
+        dfs_block tblblk;
+        if (DfsReadBlock(inodes[handle].double_indirect, &tblblk) != DFS_FAIL) {
+          uint32 *t = (uint32*)tblblk.data;
+          int e = sb.blocksize / sizeof(uint32);
+          int idx1 = (virtual_block - (10 + e));
+          if (idx1 < 0) idx1 = 0;
+          // printf("  DI[0]=%u DI[1]=%u DI[idx=%d]=%u\n",
+          //        (unsigned)t[0], (unsigned)t[1], idx1/e, (unsigned)t[idx1/e]);
+        }
+      }
       return DFS_FAIL;
     }
     
@@ -906,6 +938,7 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
   
   // recheck this
   uint32 max_blocks = 10 + entries_per_block + entries_per_block * entries_per_block;
+  // printf("entries_per_block: %d\n", entries_per_block);
   if (virtual_blocknum >= max_blocks) return DFS_FAIL;
   // end recheck 
 
@@ -944,7 +977,7 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
   
   // Double indirect
   virtual_blocknum -= (10 + entries_per_block);
-  
+
   if (inodes[handle].double_indirect == 0) {
     inodes[handle].double_indirect = DfsAllocateBlock();
     if (inodes[handle].double_indirect == DFS_FAIL) {
@@ -954,22 +987,33 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
     bzero(blk.data, sb.blocksize);
     DfsWriteBlock(inodes[handle].double_indirect, &blk);
   }
-  
+
+  // Read first-level (double-indirect) table
   DfsReadBlock(inodes[handle].double_indirect, &blk);
   table = (uint32*)blk.data;
-  
-  if (table[virtual_blocknum / entries_per_block] == 0) {
-    table[virtual_blocknum / entries_per_block] = DfsAllocateBlock();
-    if (table[virtual_blocknum / entries_per_block] == DFS_FAIL) {
-      DfsFreeBlock(new_block);
-      return DFS_FAIL;
+
+  // Determine first-level index and ensure child indirect block exists
+  {
+    uint32 idx1 = virtual_blocknum / (uint32)entries_per_block;
+    if (table[idx1] == 0) {
+      uint32 child = DfsAllocateBlock();
+      if (child == DFS_FAIL) {
+        DfsFreeBlock(new_block);
+        return DFS_FAIL;
+      }
+      table[idx1] = child;
+      // Persist updated double-indirect table
+      DfsWriteBlock(inodes[handle].double_indirect, &blk);
+      // Initialize new child indirect block with zeros
+      bzero(blk.data, sb.blocksize);
+      DfsWriteBlock(child, &blk);
+      indirect_block = child;
+    } else {
+      indirect_block = table[idx1];
     }
-    DfsWriteBlock(inodes[handle].double_indirect, &blk);
-    bzero(blk.data, sb.blocksize);
-    DfsWriteBlock(table[virtual_blocknum / entries_per_block], &blk);
   }
-  
-  indirect_block = table[virtual_blocknum / entries_per_block];
+
+  // Now write mapping in the child indirect block
   DfsReadBlock(indirect_block, &blk);
   table = (uint32*)blk.data;
   table[virtual_blocknum % entries_per_block] = new_block;

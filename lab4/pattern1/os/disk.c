@@ -123,6 +123,8 @@ int DiskReadBlock (uint32 blocknum, disk_block *b) {
     return DISK_FAIL;
   }
 
+  // Check that you remembered to rename the filename for your group
+  filename = DISK_FILENAME;
   if (filename[11] == 'X') {
     printf("DiskReadBlock: you didn't change the filesystem filename in include/os/disk.h.  Cowardly refusing to do anything.\n");
     GracefulExit();
