@@ -1247,96 +1247,96 @@ uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum)
 //-----------------------------------------------------------------
 
 
-int DfsAdaptiveCacheHit(int blocknum) {
-  int i;
-  
-  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].valid && adaptive_cache[i].blocknum == blocknum) {
-      return i;  // Return slot index
-    }
-  }
-  
-  return DFS_FAIL;
-}
-
-
-int DfsAdaptiveCacheAllocateSlot(int blocknum) {
-  int i;
-  int lru_slot = 0;
-  uint32 lru_time = adaptive_cache[0].timestamp;
-  
-  // First, look for empty slot
-  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (!adaptive_cache[i].valid) {
-      adaptive_cache[i].valid = 1;
-      adaptive_cache[i].dirty = 0;
-      adaptive_cache[i].blocknum = blocknum;
-      adaptive_cache[i].timestamp = cache_clock++;
-      return i;
-    }
-  }
-  
-  // No empty slot, find LRU (Least Recently Used)
-  for (i = 1; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].timestamp < lru_time) {
-      lru_time = adaptive_cache[i].timestamp;
-      lru_slot = i;
-    }
-  }
-  
-  // Evict LRU slot - write back if dirty
-  if (adaptive_cache[lru_slot].dirty) {
-    if (DfsWriteBlockUncached(adaptive_cache[lru_slot].blocknum, &adaptive_cache[lru_slot].data) == DFS_FAIL) {
-      return DFS_FAIL;
-    }
-  }
-  
-  // Allocate this slot
-  adaptive_cache[lru_slot].valid = 1;
-  adaptive_cache[lru_slot].dirty = 0;
-  adaptive_cache[lru_slot].blocknum = blocknum;
-  adaptive_cache[lru_slot].timestamp = cache_clock++;
-  
-  return lru_slot;
-}
-
-int DfsAdaptiveCacheFlush() {
-  int i;
-  
-  if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) {
-    return DFS_FAIL;
-  }
-  
-  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
-    if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
-      if (DfsWriteBlockUncached(adaptive_cache[i].blocknum, &adaptive_cache[i].data) == DFS_FAIL) {
-        LockHandleRelease(cache_lock);
-        return DFS_FAIL;
-      }
-      adaptive_cache[i].dirty = 0;
-    }
-    adaptive_cache[i].valid = 0;  // Clear all slots
-  }
-  
-  LockHandleRelease(cache_lock);
-  return DFS_SUCCESS;
-}
-
-// int DfsCacheFlush() {
+// int DfsAdaptiveCacheHit(int blocknum) {
 //   int i;
-//   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) return DFS_FAIL;
+  
+//   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
+//     if (adaptive_cache[i].valid && adaptive_cache[i].blocknum == blocknum) {
+//       return i;  // Return slot index
+//     }
+//   }
+  
+//   return DFS_FAIL;
+// }
+
+
+// int DfsAdaptiveCacheAllocateSlot(int blocknum) {
+//   int i;
+//   int lru_slot = 0;
+//   uint32 lru_time = adaptive_cache[0].timestamp;
+  
+//   // First, look for empty slot
+//   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
+//     if (!adaptive_cache[i].valid) {
+//       adaptive_cache[i].valid = 1;
+//       adaptive_cache[i].dirty = 0;
+//       adaptive_cache[i].blocknum = blocknum;
+//       adaptive_cache[i].timestamp = cache_clock++;
+//       return i;
+//     }
+//   }
+  
+//   // No empty slot, find LRU (Least Recently Used)
+//   for (i = 1; i < DFS_CACHE_NUM_SLOTS; i++) {
+//     if (adaptive_cache[i].timestamp < lru_time) {
+//       lru_time = adaptive_cache[i].timestamp;
+//       lru_slot = i;
+//     }
+//   }
+  
+//   // Evict LRU slot - write back if dirty
+//   if (adaptive_cache[lru_slot].dirty) {
+//     if (DfsWriteBlockUncached(adaptive_cache[lru_slot].blocknum, &adaptive_cache[lru_slot].data) == DFS_FAIL) {
+//       return DFS_FAIL;
+//     }
+//   }
+  
+//   // Allocate this slot
+//   adaptive_cache[lru_slot].valid = 1;
+//   adaptive_cache[lru_slot].dirty = 0;
+//   adaptive_cache[lru_slot].blocknum = blocknum;
+//   adaptive_cache[lru_slot].timestamp = cache_clock++;
+  
+//   return lru_slot;
+// }
+
+// int DfsAdaptiveCacheFlush() {
+//   int i;
+  
+//   if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) {
+//     return DFS_FAIL;
+//   }
+  
 //   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
 //     if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
-//       if (DfsWriteBlockUncached(adaptive_cache[i].blocknum,
-//                                 &adaptive_cache[i].data) == DFS_FAIL) {
+//       if (DfsWriteBlockUncached(adaptive_cache[i].blocknum, &adaptive_cache[i].data) == DFS_FAIL) {
 //         LockHandleRelease(cache_lock);
 //         return DFS_FAIL;
 //       }
 //       adaptive_cache[i].dirty = 0;
 //     }
-//     adaptive_cache[i].valid = 0;
+//     adaptive_cache[i].valid = 0;  // Clear all slots
 //   }
+  
 //   LockHandleRelease(cache_lock);
 //   return DFS_SUCCESS;
 // }
+
+int DfsCacheFlush() {
+  int i;
+  if (LockHandleAcquire(cache_lock) != SYNC_SUCCESS) return DFS_FAIL;
+  for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
+    if (adaptive_cache[i].valid && adaptive_cache[i].dirty) {
+      if (DfsWriteBlockUncached(adaptive_cache[i].blocknum,
+                                &adaptive_cache[i].data) == DFS_FAIL) {
+        LockHandleRelease(cache_lock);
+        return DFS_FAIL;
+      }
+      adaptive_cache[i].dirty = 0;
+    }
+    adaptive_cache[i].valid = 0;
+  }
+  LockHandleRelease(cache_lock);
+  return DFS_SUCCESS;
+}
 
