@@ -769,7 +769,11 @@ dointerrupt (unsigned int cause, unsigned int iar, unsigned int isr,
     case TRAP_TESTOS:
         RunOSTests();
       break;
-
+    case TRAP_OVERFLOW:
+      // print called when overflow trap occurs
+      printf("Overflow trap occurred at iar=0x%x, isr=0x%x\n", iar, isr);
+      // GracefulExit();
+      break;
     default:
       printf ("Got an unrecognized trap (0x%x) - exiting!\n",
 	      cause);
