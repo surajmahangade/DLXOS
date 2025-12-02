@@ -711,12 +711,12 @@ int DfsReadBlockUncached(uint32 blocknum, dfs_block *b) {
   if (!dfs_open || blocknum >= sb.num_blocks) {
     return DFS_FAIL;
   }
-  printf("DfsReadBlockUncached: Reading block %d\n", blocknum);
+  // printf("DfsReadBlockUncached: Reading block %d\n", blocknum);
   
   for (i = 0; i < phys_blocks_per_fs; i++) {
     // Add 5ms delay to simulate disk latency
     sleep_ms(5);
-    printf("DfsReadBlockUncached: Reading physical block %d\n", blocknum * phys_blocks_per_fs + i);
+    // printf("DfsReadBlockUncached: Reading physical block %d\n", blocknum * phys_blocks_per_fs + i);
     
     if (DiskReadBlock(blocknum * phys_blocks_per_fs + i, &disk_blk) == DISK_FAIL) {
       return DFS_FAIL;
@@ -861,13 +861,13 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
     return DFS_FAIL;
   }
   
-  printf("DfsWriteBlock: Writing block %d\n", blocknum);
+  // printf("DfsWriteBlock: Writing block %d\n", blocknum);
   // Detect access pattern
   DetectAccessPattern(blocknum);
   
   // Check for cache hit
   slot = DfsAdaptiveCacheHit(blocknum);
-  printf("DfsWriteBlock: Cache slot = %d\n", slot);
+  // printf("DfsWriteBlock: Cache slot = %d\n", slot);
   if (slot != DFS_FAIL) {
     // Cache HIT
     cache_hits++;
@@ -877,7 +877,7 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
     LockHandleRelease(cache_lock);
     return sb.blocksize;
   }
-  printf("DfsWriteBlock: Cache MISS for block %d\n", blocknum);
+  // printf("DfsWriteBlock: Cache MISS for block %d\n", blocknum);
   
   // Cache MISS
   cache_misses++;
@@ -885,12 +885,12 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   
   // Allocate cache slot
   slot = DfsAdaptiveCacheAllocateSlot(blocknum);
-  printf("DfsWriteBlock: Allocated cache slot %d for block %d\n", slot, blocknum);
+  // printf("DfsWriteBlock: Allocated cache slot %d for block %d\n", slot, blocknum);
   if (slot == DFS_FAIL) {
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
-  printf("DfsWriteBlock: Reading block %d into cache slot %d\n", blocknum, slot);
+  // printf("DfsWriteBlock: Reading block %d into cache slot %d\n", blocknum, slot);
   
   // Read existing data first
   if (DfsReadBlockUncached(blocknum, &adaptive_cache[slot].data) == DFS_FAIL) {
@@ -898,13 +898,13 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
     LockHandleRelease(cache_lock);
     return DFS_FAIL;
   }
-  printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
+  // printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
   
   end_time = GetCurrentTime();
   latency = end_time - start_time;
   total_miss_latency += latency;
   
-  printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
+  // printf("DfsWriteBlock: Updating cache slot %d with new data for block %d\n", slot, blocknum);
   // Update cache
   bcopy(b->data, adaptive_cache[slot].data.data, sb.blocksize);
   adaptive_cache[slot].dirty = 1;
@@ -1203,12 +1203,12 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
   }
   
   while (bytes_written < num_bytes) {
-    printf("Writing byte %d of %d\n", bytes_written, num_bytes);
+    // printf("Writing byte %d of %d\n", bytes_written, num_bytes);
     virtual_block = (start_byte + bytes_written) / sb.blocksize;
     block_offset = (start_byte + bytes_written) % sb.blocksize;
     
     fs_block = DfsInodeTranslateVirtualToFilesys(handle, virtual_block);
-    printf("Virtual block: %d, Block offset: %d, FS block: %d\n", virtual_block, block_offset, fs_block);
+    // printf("Virtual block: %d, Block offset: %d, FS block: %d\n", virtual_block, block_offset, fs_block);
     
     if (fs_block == 0 || fs_block == DFS_FAIL) {
       fs_block = DfsInodeAllocateVirtualBlock(handle, virtual_block);
@@ -1224,7 +1224,7 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
     
     bytes_to_write = min(num_bytes - bytes_written, sb.blocksize - block_offset);
     bcopy((char*)mem + bytes_written, blk.data + block_offset, bytes_to_write);
-    printf("Writing %d bytes to FS block %d at offset %d\n", bytes_to_write, fs_block, block_offset);
+    // printf("Writing %d bytes to FS block %d at offset %d\n", bytes_to_write, fs_block, block_offset);
     if (DfsWriteBlock(fs_block, &blk) == DFS_FAIL) {
       return DFS_FAIL;
     }
