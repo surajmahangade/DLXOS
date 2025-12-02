@@ -247,8 +247,6 @@ int DfsAdaptiveCacheAllocateSlot(int blocknum) {
   int i;
   static int clock_hand = 0;  // For clock algorithm
   int evict_slot = -1;
-  AccessPattern effective_pattern;
-  uint32 total_accesses;
   
   // First, look for empty slot
   for (i = 0; i < DFS_CACHE_NUM_SLOTS; i++) {
@@ -316,20 +314,11 @@ int DfsAdaptiveCacheAllocateSlot(int blocknum) {
   
 
     // Choose replacement policy based on detected pattern + simple thrash guard
-  effective_pattern = current_pattern;
-  total_accesses = cache_hits + cache_misses;
-
-  // If we are clearly thrashing (very low hit rate), stop trusting the classifier
-  if (total_accesses > (uint32)(DFS_CACHE_NUM_SLOTS * 4)) {
-    // hit_rate < ~20%  => fall back to Clock (robust default)
-    if (cache_hits * 5 < cache_misses) {
-      effective_pattern = PATTERN_RANDOM;  // treated as "default" below
-    }
-  }
-
-  switch (effective_pattern) {
+    // Choose replacement policy based purely on detected pattern.
+  // DetectAccessPattern() is already online and window-based (no trace-specific tuning).
+  switch (current_pattern) {
     case PATTERN_SEQUENTIAL:
-      // Sequential scan: evict MRU (the page we just used is least likely to be reused)
+      // Sequential scan: MRU eviction (page just used is least likely to be reused soon)
       {
         uint32 newest_time = adaptive_cache[0].timestamp;
         evict_slot = 0;
@@ -343,7 +332,7 @@ int DfsAdaptiveCacheAllocateSlot(int blocknum) {
       break;
 
     case PATTERN_LOOPING:
-      // Looping: evict LFU-ish (lowest access_count), tie-break by oldest timestamp
+      // Looping: LFU-ish — evict lowest access_count, tie-break by oldest timestamp
       {
         uint32 min_access = adaptive_cache[0].access_count;
         uint32 oldest_time = adaptive_cache[0].timestamp;
@@ -377,14 +366,14 @@ int DfsAdaptiveCacheAllocateSlot(int blocknum) {
     case PATTERN_RANDOM:
     case PATTERN_UNKNOWN:
     default:
-      // Default: Clock (Second Chance) as a safe general-purpose policy
+      // Default: Clock (Second Chance) — robust general-purpose policy
       while (1) {
         if (adaptive_cache[clock_hand].reference_bit == 0) {
           evict_slot = clock_hand;
           clock_hand = (clock_hand + 1) % DFS_CACHE_NUM_SLOTS;
           break;
         }
-        adaptive_cache[clock_hand].reference_bit = 0;  // second chance used
+        adaptive_cache[clock_hand].reference_bit = 0;  // second chance consumed
         clock_hand = (clock_hand + 1) % DFS_CACHE_NUM_SLOTS;
       }
       break;
