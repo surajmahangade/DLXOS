@@ -93,8 +93,10 @@ static void sleep_ms(int milliseconds) {
 // Helper function to get current time in milliseconds
 //-----------------------------------------------------------------
 static uint32 GetCurrentTime() {
-  // Convert jiffies to milliseconds
-  return (ClkGetCurJiffies() * ClkGetResolution()) / 1000;
+  // Convert jiffies to milliseconds using 64-bit math to avoid overflow
+  unsigned long long j = (unsigned long long)ClkGetCurJiffies();
+  unsigned long long res_us = (unsigned long long)ClkGetResolution();
+  return (uint32)((j * res_us) / 1000ULL);
 }
 
 //-----------------------------------------------------------------
@@ -336,9 +338,14 @@ uint32 DfsAllocateBlock() {
       for (j = 0; j < 32; j++) {
         mask = 1 << j;
         if ((fbv[i] & mask) == 0) {
+          uint32 candidate = (uint32)(i * 32 + j);
+          // Never hand out DFS block 0 since 0 is used as the "unallocated" sentinel
+          if (candidate == 0) {
+            continue;
+          }
           fbv[i] |= mask;
           LockHandleRelease(fbv_lock);
-          return (i * 32 + j);
+          return candidate;
         }
       }
     }
@@ -463,9 +470,9 @@ int DfsReadBlock(uint32 blocknum, dfs_block *b) {
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
   miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
-  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
-         hit_rate, miss_rate, disk_reads, disk_writes, 
-         total_miss_latency / cache_misses);
+    printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %u, Disk Writes = %u, Miss Handling Latency = %ums\n",
+      hit_rate, miss_rate, (unsigned)disk_reads, (unsigned)disk_writes,
+      (unsigned)(total_miss_latency / (cache_misses ? cache_misses : 1)));
   
   LockHandleRelease(cache_lock);
   return sb.blocksize;
@@ -569,9 +576,9 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b) {
   hit_rate = (cache_hits * 100.0) / (cache_hits + cache_misses);
   miss_rate = (cache_misses * 100.0) / (cache_hits + cache_misses);
   
-  printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %d, Disk Writes = %d, Miss Handling Latency = %dms\n",
-         hit_rate, miss_rate, disk_reads, disk_writes,
-         total_miss_latency / cache_misses);
+    printf("Cache Miss: Hit Rate = %.3f%%, Miss Rate = %.3f%%, Disk Reads = %u, Disk Writes = %u, Miss Handling Latency = %ums\n",
+      hit_rate, miss_rate, (unsigned)disk_reads, (unsigned)disk_writes,
+      (unsigned)(total_miss_latency / (cache_misses ? cache_misses : 1)));
   
   LockHandleRelease(cache_lock);
   return sb.blocksize;
